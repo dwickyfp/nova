@@ -85,8 +85,13 @@ from app.modules.assistant.provider_capabilities import (
     AssistantDecision,
 )
 from app.modules.assistant.schemas import ToolCallView
-from app.modules.assistant.security import secured_thread, session_security
-from app.modules.assistant.state import AssistantThread
+from app.modules.assistant.security import (
+    observation_context,
+    same_ui_context,
+    secured_thread,
+    session_security,
+)
+from app.modules.assistant.state import AssistantMessage, AssistantThread
 from app.modules.assistant.stream_guard import LiveReasoning
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 from app.modules.assistant.tools.client_capability import SENT_PLAINLY
@@ -271,6 +276,9 @@ class LoopContext:
     #: render what the model just fetched without re-running a query. A mutable
     #: slot on a per-request context; never persisted or sent upstream.
     last_result: dict[str, Any] | None = None
+    #: The previous answer's result a page may show again (``previous_result``),
+    #: set only when it was read in the caller's current security context.
+    previous_page_result: dict[str, Any] | None = None
     #: The user's own words for this turn. Tools may prefer an explicit period in
     #: it over the model's rewrite of the question. Never sent upstream by itself.
     user_question: str | None = None
@@ -698,6 +706,7 @@ class AssistantLoop:
             # The trailing entry is this turn's message, already stored by the
             # caller; it is appended below (once), not replayed here.
             history = history[:-1]
+        stamp = _ui_stamp(context)
         for message in history:
             if message.role == "user":
                 messages.append(
@@ -706,13 +715,15 @@ class AssistantLoop:
                     )}
                 )
             elif message.role == "assistant" and message.content:
-                artifact_context = _history_artifact_context(message.steps)
+                artifact_context = _history_artifact_context(
+                    message.steps, pages=_same_context(message, stamp))
                 content = message.content
                 if artifact_context:
                     content += "\n\n[Prior Nova tool context]\n" + artifact_context
                 messages.append({"role": "assistant", "content": content})
             elif message.role == "assistant":
-                artifact_context = _history_artifact_context(message.steps)
+                artifact_context = _history_artifact_context(
+                    message.steps, pages=_same_context(message, stamp))
                 if artifact_context:
                     messages.append(
                         {
@@ -932,6 +943,7 @@ class AssistantLoop:
         context.user_question = context.routing_content or user_content
         if context.last_result is None:
             context.last_result = _latest_thread_result(thread)
+            context.previous_page_result = _previous_page_result(thread, context)
         events.begin_run(context.run_id)
         time_budget = remaining_loop_seconds(self._time_budget, resume_state)
         deadline_unix_seconds = time.time() + time_budget
@@ -1280,6 +1292,7 @@ class AssistantLoop:
 
         context.ui_prompt = composer_prompt(
             enabled=context.intelligent_ui, presentation=turn_plan.presentation,
+            previous=context.previous_page_result,
         )
         if context.ui_prompt and turn_plan.presentation != "interactive":
             leading = next(
@@ -5049,7 +5062,7 @@ def _context_note(stats: dict[str, Any]) -> str:
     return "Fitting context budget: " + ", ".join(parts)
 
 
-def _history_artifact_context(steps: list[dict] | None) -> str:
+def _history_artifact_context(steps: list[dict] | None, *, pages: bool = False) -> str:
     """A bounded, redacted memory of prior tool-backed evidence.
 
     The UI has always been able to replay prior tables and SQL. Follow-up turns
@@ -5080,6 +5093,12 @@ def _history_artifact_context(steps: list[dict] | None) -> str:
         elif kind == "component":
             title = str((step.get("props") or {}).get("title") or "view")
             lines.append(f"- {step.get('component')} {title!r} drawn from the preceding data")
+        elif kind == "ui" and pages:
+            # A page answer has little text around it: its title, paragraphs
+            # and verified figures are what a follow-up ("so what?") reads.
+            summary = " ".join(str(step.get("fallback") or "").split())
+            if summary:
+                lines.append(f"- page shown: {summary[:1200]}")
         elif kind == "citation":
             sources = [
                 str(citation.get("source") or citation.get("title") or "source")
@@ -5089,6 +5108,46 @@ def _history_artifact_context(steps: list[dict] | None) -> str:
             if sources:
                 lines.append("- sources: " + ", ".join(sources[:10]))
     return "\n".join(lines)[:2500]
+
+
+def _ui_stamp(context: Any) -> dict[str, Any] | None:
+    """The caller's security stamp, or None when the session has none."""
+    user = getattr(context, "user", None)
+    if not isinstance(user, dict):
+        return None
+    try:
+        return observation_context(session_security(user))
+    except Exception:  # noqa: BLE001 - no valid context: earlier pages stay out
+        return None
+
+
+def _same_context(message: AssistantMessage, stamp: dict[str, Any] | None) -> bool:
+    return stamp is not None and same_ui_context(message.security_context, stamp)
+
+
+def _previous_page_result(thread: AssistantThread, context: Any) -> dict[str, Any] | None:
+    """The restored previous result, when a page may show its rows again.
+
+    A page table shows the stored rows themselves, so every recent answer must
+    have been read in the caller's current security context; a role switch in
+    the window keeps the rows out (fail closed).
+    """
+    restored = getattr(context, "last_result", None)
+    if not isinstance(restored, dict) or restored.get("source") != "previous_turn":
+        return None
+    stamp = _ui_stamp(context)
+    recent = [message for message in thread.messages[-_RESULT_LOOKBACK_MESSAGES:]
+              if message.role == "assistant"]
+    if not recent or not all(_same_context(message, stamp) for message in recent):
+        return None
+    return restored
+
+
+def _previous_page_tables(context: Any) -> dict[str, dict[str, Any]]:
+    from app.modules.assistant.ui_layout import PREVIOUS_RESULT
+
+    previous = getattr(context, "previous_page_result", None)
+    return {PREVIOUS_RESULT: previous} if isinstance(previous, dict) else {}
 
 
 def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
@@ -5622,7 +5681,8 @@ def _live_layout(
 
     return LiveLayout(
         ctx=LayoutContext(
-            tables=with_period_facts(evidence.business_tables, context.period_facts),
+            tables={**_previous_page_tables(context),
+                    **with_period_facts(evidence.business_tables, context.period_facts)},
             question=_asked(thread, user_content), language=_turn_language(context),
             chart=_draft_chart_builder(context), sign=draft,
         ),

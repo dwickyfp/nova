@@ -377,18 +377,34 @@ def prompt() -> str:
     return str(contract()["prompt"])
 
 
-def composer_prompt(*, enabled: bool, presentation: str) -> str:
+#: The result id a page uses for the previous answer's result (session-029.t2:
+#: "just give me a table instead" after a map).
+PREVIOUS_RESULT = "previous_result"
+
+
+def composer_prompt(
+    *, enabled: bool, presentation: str, previous: dict[str, Any] | None = None,
+) -> str:
     """The layout instructions for a turn: empty when pages are off for it.
 
     The planner marks a turn ``interactive`` when the person asked for a
     dashboard, an overview or a what-if; that turn should answer with a page.
-    Every other turn may still choose one, under the same rules.
+    Every other turn may still choose one, under the same rules. ``previous``
+    is the previous answer's result, which a page may show again by its id.
     """
     if not enabled:
         return ""
+    text = prompt()
+    if previous:
+        columns = ", ".join(_names(previous)[:20])
+        text += (f'\nThe previous answer\'s result is available as "{PREVIOUS_RESULT}" '
+                 f"({str(previous.get('title') or 'result')[:120]}: columns {columns}; "
+                 f"{len(previous.get('rows') or [])} rows). To show it again in another "
+                 f'form, such as a table, write Table("{PREVIOUS_RESULT}") or '
+                 f'Chart("{PREVIOUS_RESULT}", ...) without a new query.')
     if presentation == "interactive":
-        return prompt() + "\nThis request asks for a page: answer with a layout."
-    return prompt()
+        return text + "\nThis request asks for a page: answer with a layout."
+    return text
 
 
 @lru_cache(maxsize=64)
@@ -1032,6 +1048,8 @@ class LayoutResult:
     title: str
     texts: list[str]
     adjusted: bool
+    #: "label: value" for each Metric holding a verified figure, in page order.
+    figures: list[str] = field(default_factory=list)
 
 
 class LayoutStream:
@@ -1055,6 +1073,9 @@ class LayoutStream:
         self._errors: list[dict[str, str]] = []
         self._title = ""
         self._texts: list[str] = []
+        self._figures: list[str] = []
+        #: Statements that hold one checked figure (``jul = 13320066``).
+        self._values: dict[str, float] = {}
         self._seen = 0
         self._has_root = False
         #: Statements that hold a component (not a figure or state).
@@ -1178,7 +1199,11 @@ class LayoutStream:
         return out
 
     def _note_text(self, line: str) -> None:
-        _, expression = parse_statement(line)
+        name, expression = parse_statement(line)
+        # A $variable is a control's value, not a verified figure.
+        if not name.startswith("$") and isinstance(expression, Lit) and isinstance(
+                expression.value, int | float) and not isinstance(expression.value, bool):
+            self._values[name] = float(expression.value)
 
         def visit(node: Any) -> None:
             if isinstance(node, Call):
@@ -1188,6 +1213,10 @@ class LayoutStream:
                         self._texts.append(str(node.args[1].value))
                 if node.name == "Text" and node.args and isinstance(node.args[0], Lit):
                     self._texts.append(str(node.args[0].value or ""))
+                if node.name == "Metric":
+                    figure = self._figure(node)
+                    if figure:
+                        self._figures.append(figure)
                 for arg in node.args:
                     visit(arg)
             elif isinstance(node, ListE):
@@ -1200,6 +1229,37 @@ class LayoutStream:
         """Whether a published statement draws ``component`` (checked, as shown)."""
         pattern = re.compile(rf"^[A-Za-z_]\w*\s*=\s*{re.escape(component)}\(")
         return any(pattern.match(line) for line in self._published)
+
+    def _figure(self, node: Call) -> str | None:
+        """A Metric's label and verified value as text, or None for a scenario.
+
+        A value is a checked literal or a statement holding one; arithmetic over
+        $variables (a scenario) moves with the page's controls and is left out.
+        """
+        args = dict(zip(("label", "value", "format", "delta", "badge", "currency"),
+                        node.args, strict=False))
+        label, value = args.get("label"), args.get("value")
+        if not isinstance(label, Lit) or not label.value:
+            return None
+        if isinstance(value, Ref) and value.name in self._values:
+            number: float | None = self._values[value.name]
+        elif isinstance(value, Lit) and isinstance(value.value, int | float) and not isinstance(
+                value.value, bool):
+            number = float(value.value)
+        else:
+            number = None
+        if number is None:
+            return None
+        fmt = args.get("format")
+        currency = args.get("currency")
+        text = f"{number:.10g}" if not number.is_integer() else f"{int(number)}"
+        if isinstance(fmt, Lit) and fmt.value == "percent":
+            text += "%"
+        elif isinstance(currency, Lit) and currency.value:
+            text += f" {currency.value}"
+        badge = args.get("badge")
+        note = f" ({badge.value})" if isinstance(badge, Lit) and badge.value else ""
+        return f"{label.value}: {text}{note}"
 
     def prose(self) -> str:
         """The answer text outside the program."""
@@ -1226,6 +1286,7 @@ class LayoutStream:
             title=self._title,
             texts=list(self._texts),
             adjusted=self.ctx.adjusted,
+            figures=list(self._figures),
         )
 
 
@@ -1233,6 +1294,8 @@ def fallback_text(result: LayoutResult) -> str:
     """Plain text of the page, for copying and for a client that cannot draw it."""
     parts = [f"**{result.title}**"] if result.title else []
     parts.extend(text for text in result.texts if text)
+    if result.figures:
+        parts.append("\n".join(f"- {figure}" for figure in result.figures))
     return "\n\n".join(parts)
 
 
