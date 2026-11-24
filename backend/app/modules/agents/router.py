@@ -145,6 +145,7 @@ from app.modules.assistant.service import (
 )
 from app.modules.assistant.state import AssistantMessage, thread_store
 from app.modules.assistant.tools import ToolInvocation
+from app.modules.assistant.turn_outcome import ReasonCode, stopped_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -2377,6 +2378,7 @@ async def send_agent_message(
         reply_message_id = str(uuid4())
         done_frame: str | None = None
         finish_reason: str | None = None
+        turn_outcome: object = None
         # Agents answer people, not developers: no internal names on screen.
         from app.modules.assistant.plain_language import plain_frames
 
@@ -2406,6 +2408,7 @@ async def send_agent_message(
                             payload = json.loads(frame.split("data: ", 1)[1])
                             reply_message_id = payload["message_id"]
                             finish_reason = payload.get("finish_reason")
+                            turn_outcome = payload.get("outcome")
                             done_frame = frame
                             continue
                         for encoded in encoder.translate(frame):
@@ -2435,7 +2438,14 @@ async def send_agent_message(
                 try:
                     steps = list(context.steps or [])
                     if finish_reason:
-                        steps.append({"kind": "turn_outcome", "finish_reason": finish_reason})
+                        # The outcome is stored with the reason, so a reopened turn's
+                        # rebuilt ``run.finished`` carries both.
+                        steps.append({
+                            "kind": "turn_outcome", "finish_reason": finish_reason,
+                            **({"outcome": turn_outcome}
+                               if isinstance(turn_outcome, dict)
+                               and turn_outcome.get("finish_reason") == finish_reason else {}),
+                        })
                     # A disconnect can happen after a query completed but before
                     # the final response compositor ran. Keep those redacted
                     # artifacts on the partial assistant turn instead of losing
@@ -2595,7 +2605,8 @@ async def send_agent_message(
             status = "cancelled"
             interruption_reason = "cancelled"
             for raw in encoder.finish(
-                {"message_id": "", "finish_reason": "cancelled"},
+                {"message_id": "", "finish_reason": "cancelled",
+                 "outcome": stopped_outcome("cancelled", ReasonCode.STOPPED)},
                 force=not terminal_delivered(),
             ):
                 frame = sequence_frame(raw)
@@ -2615,7 +2626,10 @@ async def send_agent_message(
                     "Review saved steps and check any actions before trying again.",
                 )),
                 *encoder.finish(
-                    {"message_id": "", "finish_reason": "interrupted"},
+                    {"message_id": "", "finish_reason": "interrupted",
+                     # The run did not fail in its work: its progress could not be saved.
+                     "outcome": stopped_outcome(
+                         "interrupted", ReasonCode.PERSISTENCE_UNAVAILABLE)},
                     force=not terminal_delivered(),
                 ),
             ]:

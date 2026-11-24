@@ -25,7 +25,7 @@ Event                  Payload
 ``save.suggested``     ``{part_id, draft_ref, draft_refs, capability, reason_code, message}``
 ``artifact.saved``     ``{part_id, draft_ref, saved, suggestion_part_id?}`` (after the turn)
 ``role.changed``       ``{active_role}``
-``run.finished``       ``{message_id, finish_reason, usage?, source?}``
+``run.finished``       ``{message_id, finish_reason, usage?, source?, outcome?}``
 ``run.error``          ``{code, message}``
 ``ping``               ``{}``
 =====================  =====================================================
@@ -50,6 +50,11 @@ Side-effect events (``suggestions``, ``mission_updated``,
 ``mission_continuation``, ``dashboard_changed``, ``dashboard_activity``,
 ``client_action``, ``execution_time_context``, ``business_result``) keep their
 established payloads and are numbered in the same sequence.
+
+``run.finished`` may carry ``outcome``, the turn's :class:`TurnOutcome`
+(:mod:`app.modules.assistant.turn_outcome`): what the person got, with a reason
+code, decided from the loop's facts. It is additive; ``finish_reason`` keeps its
+established values.
 
 ``artifact.draft`` and ``save.suggested`` each open and seal their own part
 (types ``artifact_preview`` and ``save_suggestion``). After the turn, an edit in
@@ -382,7 +387,7 @@ class StudioStreamEncoder:
             "message_id": str(done.get("message_id") or ""),
             "finish_reason": reason,
         }
-        for key in ("usage", "source"):
+        for key in ("usage", "source", "outcome"):
             if done.get(key):
                 payload[key] = done[key]
         frames.append(self._frame(RUN_FINISHED, payload))

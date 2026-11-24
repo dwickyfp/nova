@@ -130,7 +130,7 @@ async def test_a_measure_no_metric_fits_is_still_asked_back(monkeypatch):
         monkeypatch, _plan(metrics=[], dimensions=["city"], unresolved_concepts=[missing]),
     )
     outcome = await _run(tool, "Payroll per city")
-    assert outcome.error_class == "CLARIFICATION_REQUIRED"
+    assert outcome.error_class == "CATALOG_UNSUPPORTED"
     execute.assert_not_awaited()
 
 

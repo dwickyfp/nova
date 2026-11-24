@@ -8,7 +8,7 @@ import type {
   ToolClassification,
   WorkflowProvenance,
 } from "./types";
-import { answerSource } from "./types";
+import { answerSource, turnOutcome } from "./types";
 import { parseComponentBlock } from "../studio/runtime/components/block";
 
 /**
@@ -284,6 +284,7 @@ export function parseAssistantEvent(
               ? usage.completion_tokens
               : undefined,
           source: answerSource(record.source),
+          outcome: turnOutcome(record.outcome),
         };
       }
       case "error":

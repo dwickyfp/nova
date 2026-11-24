@@ -76,7 +76,11 @@ CLAIMS_INSTRUCTION = (
     "\"kind\": \"hypothesis\", \"hypothesis_id\": the canonical id, "
     "\"causal_status\": its unchanged canonical arithmetic | association | "
     "supported_effect | unknown label}. Arithmetic and association do not establish "
-    "a causal effect."
+    "a causal effect. When you decline a request or say your data cannot answer it, "
+    "end with the block too, holding {\"kind\": \"outcome\", \"outcome\": refuse | "
+    "limitation, \"reason\": write_not_allowed | source_not_available | "
+    "role_not_permitted | general_knowledge | catalog_unsupported | outside_data_window, "
+    "\"alternatives_shown\": true when you also show a labelled figure from your data}."
 )
 
 

@@ -219,7 +219,7 @@ export class TestStudioEncoder {
       } else frames.push(this.end(partId, state));
     }
     const payload: Record<string, unknown> = { message_id: str(done.message_id), finish_reason: reason };
-    for (const key of ["usage", "source"]) if (done[key]) payload[key] = done[key];
+    for (const key of ["usage", "source", "outcome"]) if (done[key]) payload[key] = done[key];
     frames.push({ event: "run.finished", data: payload });
     return frames;
   }

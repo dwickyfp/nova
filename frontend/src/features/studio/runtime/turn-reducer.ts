@@ -16,6 +16,7 @@ import type {
   ThinkingPhase,
   ToolCallStatus,
   ToolCallView,
+  TurnOutcome,
 } from "@/features/assistant/types";
 import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
@@ -165,6 +166,8 @@ export type TurnRunState = {
   suggestions?: string[];
   /** Set once a `role.changed` arrived in this turn. */
   roleChangedTo?: string;
+  /** What the turn ended as (`run.finished.outcome`), when the server sent it. */
+  outcome?: TurnOutcome;
 };
 
 /** Finish reasons that end a turn normally: an answer, or a question back. */
@@ -426,6 +429,7 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
         tokens: event.totalTokens ?? state.tokens,
         inputTokens: event.promptTokens ?? state.inputTokens,
         outputTokens: event.completionTokens ?? state.outputTokens,
+        ...(event.outcome ? { outcome: event.outcome } : {}),
       };
     }
     case "aux":

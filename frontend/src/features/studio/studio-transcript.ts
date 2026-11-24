@@ -3,6 +3,7 @@ import type {
   CitationBlock,
   TableBlock,
 } from "@/features/assistant/types";
+import { turnOutcome } from "@/features/assistant/types";
 import type { AgentMessage, GuardDecision } from "@/features/agents/api";
 import type { RailStep } from "./thought-turn";
 import type { AnswerFeedback } from "./answer-footer";
@@ -462,6 +463,7 @@ function replayJournal(turn: TranscriptTurn, journal: JournalStep, message: Agen
     if (event) replayed = applyToTurn(replayed, event);
   }
   const outcome = message.steps?.find((step) => step.kind === "turn_outcome");
+  const storedOutcome = outcome && "outcome" in outcome ? turnOutcome(outcome.outcome) : undefined;
   // The terminal event follows the message write; it is rebuilt from the row.
   return applyToTurn(replayed, {
     type: "run.finished",
@@ -472,6 +474,7 @@ function replayJournal(turn: TranscriptTurn, journal: JournalStep, message: Agen
     ...(message.total_tokens != null ? { totalTokens: message.total_tokens } : {}),
     ...(message.prompt_tokens != null ? { promptTokens: message.prompt_tokens } : {}),
     ...(message.completion_tokens != null ? { completionTokens: message.completion_tokens } : {}),
+    ...(storedOutcome ? { outcome: storedOutcome } : {}),
   });
 }
 

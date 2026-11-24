@@ -814,6 +814,8 @@ export type TraceStep =
   | {
       kind: "turn_outcome";
       finish_reason: string;
+      /** What the turn ended as (schema version 1); absent on turns stored before it. */
+      outcome?: unknown;
     }
   | ({ kind: "guard" } & GuardDecision)
   | {

@@ -318,3 +318,33 @@ describe("chart artifacts", () => {
   });
 });
 
+
+describe("turn outcome", () => {
+  it("keeps the server's outcome beside the finish reason", () => {
+    const turn = live(parsedEvents(answerCase.v2));
+    expect(turn.run.outcome).toMatchObject({
+      schema_version: 1, kind: "answer", reason: "governed_data", finish_reason: "stop",
+    });
+    expect(turn.run.status).toBe("done");
+  });
+
+  it("accepts a run.finished without an outcome (older servers)", () => {
+    const turn = live(parsedEvents(roleCase.v2));
+    expect(turn.run.outcome).toBeUndefined();
+    expect(turn.run.status).toBe("done");
+  });
+
+  it("drops an outcome it cannot read and rebuilds a stored one on reopen", () => {
+    const malformed = parsedEvents(encodeV1Turn([
+      { event: "done", data: { message_id: "m", finish_reason: "stop", outcome: { kind: "answer" } } },
+    ]));
+    expect(reduceEvents(malformed).outcome).toBeUndefined();
+    const stored = storedMessage(answerCase);
+    const outcome = (answerCase.v1.find((frame) => frame.event === "done")!.data as { outcome: unknown }).outcome;
+    stored.steps = [
+      ...(stored.steps ?? []).filter((step) => step.kind !== "turn_outcome"),
+      { kind: "turn_outcome", finish_reason: "stop", outcome },
+    ];
+    expect(replayed(stored).run.outcome).toEqual(outcome);
+  });
+});
