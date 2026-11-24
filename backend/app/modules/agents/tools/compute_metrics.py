@@ -69,8 +69,10 @@ PARAMETERS: dict[str, Any] = {
         "with_evidence_id": {
             "type": "string",
             "description": "For combine: the second result, joined to evidence_id on the "
-            "label column both share (department, month, ...). For ratio: a one-row "
-            "result holding the divisor in compare_column (revenue against a target).",
+            "label column both share (department, month, ...). For ratio, difference or "
+            "pct_change: a one-row result holding one figure in compare_column (defaults "
+            "to value_column), such as a target or the overall average, that every row "
+            "is compared with.",
         },
         "periods": {
             "type": "integer",
@@ -80,12 +82,13 @@ PARAMETERS: dict[str, Any] = {
         },
         "factor": {
             "type": "number",
-            "description": "scale: the multiplier (1.1 for 10% more, 2 for double).",
+            "description": "scale: the multiplier (1.1 for 10% more, 2 for double). "
+            "Give factor or percent, one of them.",
         },
         "percent": {
             "type": "number",
             "description": "scale: the change in percent instead of factor (10 for +10%, "
-            "-5 for 5% less).",
+            "-5 for 5% less). Give factor or percent, one of them.",
         },
         "only_label": {
             "type": "string",
@@ -532,10 +535,31 @@ def _compute(
     }
 
 
-def _scale_factor(arguments: dict[str, Any]) -> Decimal:
+def scale_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """``factor`` and ``percent`` reduced to the one that states the scenario.
+
+    Both may arrive when they say the same thing (1.1 and 10), or when one is
+    the neutral value (percent 0, factor 1) a model fills in for an unused
+    field: the redundant one is dropped. Two different changes are refused.
+    """
     factor, percent = arguments.get("factor"), arguments.get("percent")
-    if factor is not None and percent is not None:
-        raise ComputeError("scale takes factor or percent, not both.")
+    if factor is None or percent is None or isinstance(factor, bool) or isinstance(percent, bool):
+        return arguments
+    step = _decimal(factor, column="factor")
+    change = _decimal(percent, column="percent")
+    if change == 0 or abs(step - (1 + change / 100)) < Decimal("1e-9"):
+        return {**arguments, "percent": None}
+    if step == 1:
+        return {**arguments, "factor": None}
+    raise ComputeError(
+        f"scale: factor {factor} and percent {percent} describe different changes. "
+        "Give factor (1.15) or percent (15), one of them."
+    )
+
+
+def _scale_factor(arguments: dict[str, Any]) -> Decimal:
+    arguments = scale_arguments(arguments)
+    factor, percent = arguments.get("factor"), arguments.get("percent")
     if factor is None and percent is None:
         raise ComputeError("scale needs factor (1.1) or percent (10).")
     raw = factor if factor is not None else percent
@@ -592,38 +616,138 @@ def _scale(
     }
 
 
+def _figure(
+    other: dict[str, Any], arguments: dict[str, Any],
+) -> tuple[str, Any]:
+    """The one figure another result holds: its column and value.
+
+    ``compare_column`` names it; without one, the column ``value_column``
+    names (the overall average of the same measure), or the other result's
+    only numeric column.
+    """
+    operation = str(arguments.get("operation") or "")
+    other_columns = [str(column) for column in other.get("columns") or []]
+    other_rows = [list(row) for row in other.get("rows") or []]
+    if len(other_rows) != 1 or len(other_rows[0]) != len(other_columns):
+        raise ComputeError(
+            f"{operation} with with_evidence_id needs a one-row result holding the "
+            f"figure to compare with. That result has {len(other_rows)} rows."
+        )
+    named = str(arguments.get("compare_column") or "")
+    candidates = [named] if named else [str(arguments.get("value_column") or ""), ""]
+    for given in candidates:
+        try:
+            column = _value_column(given, other_columns, other_rows)
+            break
+        except ComputeError:
+            continue
+    else:
+        raise ComputeError(
+            f"{operation} with with_evidence_id needs compare_column, one of: "
+            f"{other_columns}."
+        )
+    return column, other_rows[0][other_columns.index(column)]
+
+
+def _widened(
+    table: dict[str, Any], other: dict[str, Any], arguments: dict[str, Any],
+) -> tuple[dict[str, Any], str, Any]:
+    """``table`` with the other result's figure as one more column on every row.
+
+    The added column keeps the figure's name, or ``<name>_reference`` when the
+    table already has a column of that name (a city's average order value
+    against the overall one).
+    """
+    column, figure = _figure(other, arguments)
+    columns = [str(name) for name in table.get("columns") or []]
+    added = column if column not in columns else f"{column}_reference"
+    widened = {
+        **{key: value for key, value in table.items() if key not in {"columns", "rows"}},
+        "columns": [*columns, added],
+        "rows": [[*row, figure] for row in (table.get("rows") or [])],
+    }
+    return widened, added, figure
+
+
+def compare_to_figure(
+    table: dict[str, Any], other: dict[str, Any], arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Each row's difference from, or percent change against, one figure of another
+    result (the top city's average order value against the overall average)."""
+    operation = str(arguments.get("operation") or "")
+    widened, added, figure = _widened(table, other, arguments)
+    columns = [str(name) for name in widened["columns"]]
+    rows = [list(row) for row in widened["rows"][:MAX_ROWS]]
+    if not rows or any(len(row) != len(columns) for row in rows):
+        raise ComputeError("The result has no complete rows to compare.")
+    value_column = _value_column(str(arguments.get("value_column") or ""), columns[:-1],
+                                 [row[:-1] for row in rows])
+    value_index = columns.index(value_column)
+    label_index = next((index for index in range(len(columns) - 1)
+                        if index != value_index
+                        and not all(_is_numeric(row[index]) for row in rows)), None)
+    label_name = columns[label_index] if label_index is not None else "row"
+    reference = _decimal(figure, column=added)
+    only = str(arguments.get("to_label") or arguments.get("only_label") or "").strip()
+    out: list[list[Any]] = []
+    with localcontext() as context:
+        context.prec = 34
+        for position, row in enumerate(rows):
+            label = str(row[label_index]) if label_index is not None else str(position + 1)
+            if only and _label_key(label) != _label_key(only):
+                continue
+            value = _decimal(row[value_index], column=value_column)
+            if operation == "difference":
+                change: str | None = _round(value - reference)
+            elif reference == 0:
+                change = None
+            else:
+                change = _percent((value - reference) / abs(reference) * 100)
+            out.append([label, _round(value), _round(reference), change])
+    if not out:
+        raise ComputeError(
+            f"to_label {only!r} matches no {label_name} value. Available: "
+            + ", ".join(repr(str(row[label_index])) for row in rows[:20]
+                        if label_index is not None) + "."
+        )
+    suffix = "difference" if operation == "difference" else "pct_change"
+    name = f"{value_column}_{suffix}"
+    source = str(other.get("source") or "")
+    first = out[0]
+    return {
+        "columns": [label_name, value_column, added, name],
+        "rows": out,
+        "summary": (
+            f"{name} against {added} {_round(reference)}"
+            + (f" from {source}" if source else "")
+            + (f": {first[0]} {first[1]} gives {first[3]}" if len(out) == 1 else
+               f" for {len(out)} row(s)")
+            + ". State these figures."
+        ),
+    }
+
+
 def ratio_to_figure(
     table: dict[str, Any], other: dict[str, Any], arguments: dict[str, Any],
 ) -> dict[str, Any]:
     """Each row's value divided by one figure from another result, with the
     percentage (revenue against a target)."""
-    compare_column = str(arguments.get("compare_column") or "")
-    other_columns = [str(column) for column in other.get("columns") or []]
-    other_rows = list(other.get("rows") or [])
-    if len(other_rows) != 1 or compare_column not in other_columns:
-        raise ComputeError(
-            "ratio with with_evidence_id needs a one-row result holding compare_column: "
-            f"{other_columns}."
-        )
-    columns = [str(column) for column in table.get("columns") or []]
-    if compare_column in columns:
-        raise ComputeError(f"{compare_column!r} is in both results; divide within one result.")
-    figure = other_rows[0][other_columns.index(compare_column)]
-    widened = {
-        "columns": [*columns, compare_column],
-        "rows": [[*row, figure] for row in (table.get("rows") or [])],
-    }
-    result = compute(widened, {**arguments, "with_evidence_id": None})
+    widened, compare_column, figure = _widened(table, other, arguments)
+    result = compute(widened, {**arguments, "compare_column": compare_column,
+                               "with_evidence_id": None})
     ratio_index = len(result["columns"]) - 1
     percent_name = f"{result['columns'][ratio_index]}_pct"
     divisor = _decimal(figure, column=compare_column)
-    value_index = result["columns"].index(str(arguments.get("value_column")))
-    rows = [
-        [*row, None if row[ratio_index] is None or divisor == 0 else _round(
-            _decimal(row[value_index], column=str(arguments.get("value_column"))) / divisor * 100
-        )]
-        for row in result["rows"]
-    ]
+    value_name = str(result["columns"][1])
+    value_index = 1
+    with localcontext() as context:
+        context.prec = 34
+        rows = [
+            [*row, None if row[ratio_index] is None or divisor == 0 else _round(
+                _decimal(row[value_index], column=value_name) / divisor * 100
+            )]
+            for row in result["rows"]
+        ]
     source = str(other.get("source") or "")
     return {
         "columns": [*result["columns"], percent_name],
@@ -636,6 +760,26 @@ def ratio_to_figure(
     }
 
 
+def _holding(
+    table: Any, tables: dict[str, dict[str, Any]], arguments: dict[str, Any],
+) -> Any:
+    """The result a call without evidence_id computes on: the latest data result,
+    unless only a newer result of this turn (a combined or calculated table)
+    holds the columns the call names."""
+    names = [str(arguments.get("value_column") or "")]
+    if not arguments.get("with_evidence_id"):
+        names.append(str(arguments.get("compare_column") or ""))
+    names = [name.casefold() for name in names if name]
+
+    def holds(candidate: Any) -> bool:
+        columns = {str(column).casefold() for column in (candidate or {}).get("columns") or []}
+        return all(name in columns or name.rsplit(".", 1)[-1] in columns for name in names)
+
+    if not names or not isinstance(table, dict) or holds(table):
+        return table
+    return next((tables[key] for key in reversed(list(tables)) if holds(tables[key])), table)
+
+
 class ComputeMetricsTool:
     #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
     #: so a measured attempt counts their tokens.
@@ -646,8 +790,9 @@ class ComputeMetricsTool:
         "contribution to change, a what-if scale (a factor or percent on every row or one row), "
         "or a ratio of two columns from a data result already returned "
         "in this conversation; combine joins two such results on the label column they share. "
-        "A ratio may divide by one figure from another result (with_evidence_id, a one-row "
-        "result such as a target from an external source); it also gives the percentage. "
+        "A ratio, difference or pct_change may compare every row with one figure from "
+        "another result (with_evidence_id, a one-row result such as a target or the overall "
+        "average); a ratio also gives the percentage. "
         "Use it before stating any number that is not a result cell. It reads no new data."
     )
     parameters = PARAMETERS
@@ -682,21 +827,31 @@ class ComputeMetricsTool:
             table = getattr(context, "last_result", None)
             if not isinstance(table, dict) and tables:
                 table = list(tables.values())[-1]
+            table = _holding(table, tables, args)
         if not isinstance(table, dict):
             return ToolOutcome(
                 ok=False, summary="", error="Run a data query first.",
                 error_class="NO_DATA_RESULT", recoverable=True,
                 safe_detail="compute_metrics needs a data result from this conversation.",
             )
+        normalized: dict[str, Any] = {}
         try:
-            if args.get("operation") == "ratio" and args.get("with_evidence_id"):
+            operation = args.get("operation")
+            if operation == "scale":
+                scaled = scale_arguments(args)
+                normalized = {key: args[key] for key in ("factor", "percent")
+                              if args.get(key) is not None and scaled.get(key) is None}
+                args = scaled
+            if operation in {"ratio", "difference", "pct_change"} and args.get(
+                    "with_evidence_id"):
                 other = tables.get(str(args.get("with_evidence_id") or ""))
                 if other is None:
                     raise ComputeError(
-                        "ratio with_evidence_id must name a data result: "
+                        f"{operation} with_evidence_id must name a data result: "
                         + ", ".join(list(tables)[-8:])
                     )
-                result = ratio_to_figure(table, other, args)
+                result = (ratio_to_figure(table, other, args) if operation == "ratio"
+                          else compare_to_figure(table, other, args))
             elif args.get("operation") == "combine":
                 other = tables.get(str(args.get("with_evidence_id") or ""))
                 if other is None or not evidence_id:
@@ -729,12 +884,14 @@ class ComputeMetricsTool:
                 recoverable=True, safe_detail=str(exc),
                 repair_context={"columns": list(table.get("columns") or [])[:40]},
             )
-        if hasattr(context, "last_result"):
-            # A chart or a further computation continues from this table.
-            context.last_result = {
-                "title": f"{args['operation']} of {args.get('value_column') or 'results'}",
-                "columns": result["columns"], "rows": result["rows"],
-            }
+        # The derived table is its own evidence (the loop records it under a new
+        # evidence id and shows it as a table). ``last_result`` stays the data
+        # result, so a later chart or calculation of that data still finds it;
+        # one of the derived figures is reached by its evidence id or columns.
+        metadata: dict[str, Any] = {"operation": args["operation"], "evidence_kind": "derived"}
+        if normalized:
+            # Redundant arguments accepted: recorded, so a model bug stays visible.
+            metadata["dropped_arguments"] = normalized
         return ToolOutcome(
             ok=True,
             summary=result["summary"],
@@ -745,7 +902,7 @@ class ComputeMetricsTool:
                 "rows": result["rows"],
             },
             evidence={"source": "computed_from_authorized_result"},
-            metadata={"operation": args["operation"], "evidence_kind": "derived"},
+            metadata=metadata,
         )
 
 

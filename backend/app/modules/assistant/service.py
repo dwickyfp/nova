@@ -4998,48 +4998,79 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
 
     A query in the new turn overwrites this slot, so "chart that" uses prior
     data while "query X, then chart it" uses the newly retrieved result.
+
+    A calculation's table (``compute_metrics``) never stands in for the data
+    it was computed from: the newest data table is restored, with the newer
+    calculated tables of the same answer kept beside it as ``derived``, so a
+    follow-up about the calculation can still reach them by their columns.
     """
     for message in reversed(thread.messages[-_RESULT_LOOKBACK_MESSAGES:]):
         if message.role != "assistant":
             continue
+        derived: list[dict[str, Any]] = []
         for step in reversed(message.steps or []):
             # ``result`` is a table an earlier answer kept without displaying it.
             if step.get("kind") not in {"table", "result"}:
                 continue
-            raw_columns = step.get("columns")
-            raw_rows = step.get("rows")
-            if not isinstance(raw_columns, list) or not raw_columns:
+            restored = _restored_table(message, step)
+            if restored is None:
                 continue
-            columns = [str(column) for column in raw_columns[:_RESTORED_RESULT_MAX_COLUMNS]]
-            rows: list[list[Any]] = []
-            if isinstance(raw_rows, list):
-                for raw_row in raw_rows[:_RESTORED_RESULT_MAX_ROWS]:
-                    if isinstance(raw_row, (list, tuple)):
-                        rows.append(list(raw_row[: len(columns)]))
-                    elif isinstance(raw_row, dict):
-                        rows.append([raw_row.get(column) for column in columns])
-            producer = next((
-                item for item in message.steps or []
-                if item.get("kind") == "tool" and step.get("tool_call_id")
-                and item.get("tool_call_id") == step.get("tool_call_id")
-                and item.get("name") in {"query_execute", "semantic_query"}
-                and item.get("status") in ("done", None)
-            ), None)
-            statement = str((producer or {}).get("preview") or "").strip()
-            return {
-                "title": str(step.get("title") or "query result"),
-                "columns": columns,
-                "rows": rows,
-                "source": "previous_turn",
-                # The governed statement behind the kept rows, so a follow-up
-                # chart draws from the same query under the caller's role.
-                **({"sql": statement}
-                   if re.match(r"^\s*(SELECT|WITH)\b", statement, re.IGNORECASE) else {}),
-                # What a kept result measures, when it was recorded.
-                **({"metadata": step["metadata"]}
-                   if isinstance(step.get("metadata"), dict) and step["metadata"] else {}),
-            }
+            if restored.pop("calculated", False):
+                derived.append(restored)
+                continue
+            if derived:
+                restored["derived"] = list(reversed(derived[:_RESTORED_DERIVED_MAX]))
+            return restored
+        if derived:
+            return derived[0]
     return None
+
+
+#: Calculated tables kept beside a restored data result.
+_RESTORED_DERIVED_MAX = 3
+
+
+def _restored_table(message: Any, step: dict[str, Any]) -> dict[str, Any] | None:
+    """One persisted table step as a result, or None when it has no columns.
+
+    ``calculated`` marks a ``compute_metrics`` table; the caller removes it.
+    """
+    raw_columns = step.get("columns")
+    raw_rows = step.get("rows")
+    if not isinstance(raw_columns, list) or not raw_columns:
+        return None
+    columns = [str(column) for column in raw_columns[:_RESTORED_RESULT_MAX_COLUMNS]]
+    rows: list[list[Any]] = []
+    if isinstance(raw_rows, list):
+        for raw_row in raw_rows[:_RESTORED_RESULT_MAX_ROWS]:
+            if isinstance(raw_row, (list, tuple)):
+                rows.append(list(raw_row[: len(columns)]))
+            elif isinstance(raw_row, dict):
+                rows.append([raw_row.get(column) for column in columns])
+    tool = next((
+        item for item in message.steps or []
+        if item.get("kind") == "tool" and step.get("tool_call_id")
+        and item.get("tool_call_id") == step.get("tool_call_id")
+    ), None) or {}
+    producer = tool if (
+        tool.get("name") in {"query_execute", "semantic_query"}
+        and tool.get("status") in ("done", None)
+    ) else {}
+    statement = str(producer.get("preview") or "").strip()
+    return {
+        "title": str(step.get("title") or "query result"),
+        "columns": columns,
+        "rows": rows,
+        "source": "previous_turn",
+        # The governed statement behind the kept rows, so a follow-up
+        # chart draws from the same query under the caller's role.
+        **({"sql": statement}
+           if re.match(r"^\s*(SELECT|WITH)\b", statement, re.IGNORECASE) else {}),
+        # What a kept result measures, when it was recorded.
+        **({"metadata": step["metadata"]}
+           if isinstance(step.get("metadata"), dict) and step["metadata"] else {}),
+        **({"calculated": True} if tool.get("name") == "compute_metrics" else {}),
+    }
 
 
 def _narration_without_figures(text: str) -> str:
