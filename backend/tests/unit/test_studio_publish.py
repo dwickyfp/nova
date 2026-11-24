@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from app.core.exceptions import NovaException
 from app.modules.agents.tools import native_dataviz as native
 from app.modules.viz import studio_publish, studio_results
+from app.modules.viz.canvas import current as current_dashboard
+from app.modules.viz.canvas import dashboard_definition, legacy_widgets
 from app.modules.viz.contracts.authoring import SqlInspection
 from app.modules.viz.contracts.charts import (
     CartesianEncoding,
@@ -298,7 +300,7 @@ def _receipt_for(operation_id: UUID, identity: UUID, base: int, new: int) -> dic
 
 
 def _empty_dashboard(identity: UUID = EXISTING) -> DashboardDefinition:
-    return DashboardDefinition.model_validate({
+    return dashboard_definition({
         "dashboard_id": str(identity), "title": "Sales",
         "pages": [{"page_id": str(PAGE), "title": "Overview", "widgets": [{
             "kind": "chart", "widget_id": "55555555-5555-4555-8555-555555555555",
@@ -332,6 +334,7 @@ class FakeDocuments:
     async def create_visual(self, user, workspace_id, document, *, operation_id):
         self.calls.append("create")
         identity = getattr(document, "chart_id", None) or document.dashboard_id
+        document = current_dashboard(document) if hasattr(document, "dashboard_id") else document
         self.docs[identity] = [document]
         self.workspaces[identity] = "personal-ws" if workspace_id == "personal" else workspace_id
         self.receipts[operation_id] = _receipt_for(operation_id, identity, 0, 1)
@@ -447,7 +450,7 @@ def docs(monkeypatch) -> FakeDocuments:
 
 
 def _widgets(dashboard: DashboardDefinition) -> list[Any]:
-    return [widget for page in dashboard.pages for widget in page.widgets]
+    return [widget for page in dashboard.pages for widget in legacy_widgets(page)]
 
 
 # ── Listing ─────────────────────────────────────────────────────────────────

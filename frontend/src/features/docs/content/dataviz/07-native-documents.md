@@ -181,6 +181,30 @@ key returns the recorded result, even if the source has since changed. Retry use
 the original login and role context and still requires edit access. Changing the
 request or its expected revision requires a new operation key.
 
+## Dashboard pages
+
+A dashboard definition describes each page as a canvas: a page size, a grid
+that helps line things up, and the items placed on it. An item is a chart, a
+filter, text, an image, a shape, an icon, a connector line, a note or a group of
+items. Each item has its own position and size in pixels, and the order of the
+items is the order in which they are stacked. A page can also list the order in
+which the keyboard moves between items and the order, or the items to leave
+out, on a phone.
+
+The grid is only a guide for placing items. Its settings (number of columns,
+gutter, margin, row height, and whether it is shown and items snap to it) are
+saved with the page.
+
+Dashboards saved before canvases existed used a grid of 12 columns. Nova keeps
+those saved versions exactly as they are and reads them as canvas pages 1,200
+pixels wide that scroll down; every chart keeps its place and size. Integrations
+written for the grid can still create a dashboard in the grid form and still
+send grid changes to move, add, replace or remove a widget. Nova applies them to
+the canvas. Sending an earlier change again with its original operation ID
+returns its original receipt.
+
+A page holds at most 150 items, and groups can be nested at most three deep.
+
 ## Drafts and publications
 
 Each successful edit creates a new draft revision. Publishing selects an

@@ -17,6 +17,11 @@ not this guide.
   browser contracts with `scripts/generate_viz_contracts.py`; never hand-edit
   generated schemas. Existing `compiler.py` and `calc/` own chart calculations;
   published Semantic Views retain their existing registry/compiler owner.
+- Dashboards are schema-3 canvases ([ADR-001](../../../../docs/architecture/native-dataviz/ADR-001-free-canvas.md)).
+  `canvas.py` upcasts stored schema-2 revisions on read; never rewrite an
+  immutable revision. Receipts digest the submitted operation, so keep earlier
+  operation shapes byte-stable and adapt them in `operations.py`. A new document
+  version needs an upcaster, golden fixtures and the browser mirror in step.
 - Dataset authoring derives fields from the caller-authorized analyzer and
   catalog identity. Never infer types from rows or treat reflection as SELECT
   permission. Revalidate physical identity, schema and security context around

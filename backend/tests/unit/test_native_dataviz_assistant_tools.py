@@ -20,9 +20,13 @@ from app.modules.assistant import events
 from app.modules.assistant.plain_language import find_technical_leaks, make_plain
 from app.modules.assistant.schemas import AgentMessageRequest, DatavizTurnInput
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry
+from app.modules.viz.canvas import current as current_dashboard
+from app.modules.viz.canvas import dashboard_definition, legacy_widgets
 from app.modules.viz.contracts.charts import ChartDefinition
+from app.modules.viz.contracts.commands import PageAdd, WidgetAdd
 from app.modules.viz.contracts.common import DecimalValue, IntegerValue, StringValue
-from app.modules.viz.contracts.dashboards import DashboardDefinition, Layout
+from app.modules.viz.contracts.dashboards import DashboardDefinition
+from app.modules.viz.contracts.dashboards_v2 import Layout
 from app.modules.viz.contracts.datasets import DatasetDefinition
 from app.modules.viz.contracts.queries import DatasetQueryResult, QueryColumn
 from app.modules.viz.operations import apply_operation
@@ -68,8 +72,16 @@ def _chart(chart_id: UUID = CHART, visual: str = "bar") -> ChartDefinition:
     })
 
 
+def _added(document: DashboardDefinition, *changes: Any) -> DashboardDefinition:
+    """``document`` with legacy grid changes applied (widgets placed on the canvas)."""
+    from app.modules.viz.contracts.commands import Operation
+
+    return apply_operation(document, Operation(operation_id=uuid4(), expected_revision=1,
+                                               changes=changes))
+
+
 def _dashboard() -> DashboardDefinition:
-    return DashboardDefinition.model_validate({
+    return dashboard_definition({
         "dashboard_id": str(DASHBOARD), "title": "Sales",
         "pages": [{"page_id": str(PAGE), "title": "Overview", "widgets": [{
             "kind": "chart", "widget_id": str(WIDGET),
@@ -126,6 +138,7 @@ class FakeDocuments:
             return self.receipts[operation_id]
         identity = getattr(document, "chart_id", None) or document.dashboard_id
         self.created.append((workspace_id, document))
+        document = current_dashboard(document) if hasattr(document, "dashboard_id") else document
         self.docs[identity] = [document]
         self.workspaces[identity] = workspace_id
         return self._receipt(operation_id, identity, 0)
@@ -384,10 +397,10 @@ async def test_adding_a_chart_commits_a_revision_in_the_dashboards_workspace(doc
     }
     assert [workspace for workspace, _ in docs.created] == ["abc", "abc"]
     page = docs.docs[DASHBOARD][-1].pages[0]
-    assert [widget.layout.model_dump() for widget in page.widgets[1:]] == [
+    assert [widget.layout.model_dump() for widget in legacy_widgets(page)[1:]] == [
         {"x": 6, "y": 0, "w": 6, "h": 4}, {"x": 0, "y": 4, "w": 3, "h": 2},
     ]
-    assert {widget.chart_ref.chart_id for widget in page.widgets[1:]} == {
+    assert {widget.chart_ref.chart_id for widget in legacy_widgets(page)[1:]} == {
         chart.chart_id for _, chart in docs.created
     }
     assert docs.applied[0].expected_revision == 1
@@ -428,7 +441,7 @@ async def test_a_concurrent_edit_of_the_same_widget_is_reported_not_overwritten(
     assert not outcome.ok
     assert "Someone else changed that part of the dashboard" in outcome.error
     assert docs.applied == []
-    assert docs.docs[DASHBOARD][-1].pages[0].widgets[0].layout.y == 6
+    assert legacy_widgets(docs.docs[DASHBOARD][-1].pages[0])[0].layout.y == 6
 
 
 @pytest.mark.asyncio
@@ -440,12 +453,11 @@ async def test_a_person_editing_another_widget_and_neva_moving_one_both_survive(
     other = UUID("66666666-6666-4666-8666-666666666666")
     start = docs.docs[DASHBOARD][0]
     page = start.pages[0]
-    from app.modules.viz.contracts.dashboards import Layout, TextWidget
+    from app.modules.viz.contracts.dashboards_v2 import Layout, TextWidget
 
     note = TextWidget(widget_id=other, title="Notes", text="Q3 plan",
                       layout=Layout(x=6, y=0, w=6, h=2))
-    docs.docs[DASHBOARD][0] = start.model_copy(update={"pages": (
-        page.model_copy(update={"widgets": (*page.widgets, note)}),)})
+    docs.docs[DASHBOARD][0] = _added(start, WidgetAdd(page_id=page.page_id, widget=note))
 
     def edited_by_a_person(document):
         return apply_operation(document, Operation(
@@ -460,7 +472,7 @@ async def test_a_person_editing_another_widget_and_neva_moving_one_both_survive(
     outcome = await _run("native_dashboard_arrange",
                          {"move": [{"widget_id": str(WIDGET), "x": 0, "y": 8}]})
     assert outcome.ok, outcome.error
-    final = {w.widget_id: w.layout for w in docs.docs[DASHBOARD][-1].pages[0].widgets}
+    final = {w.widget_id: w.layout for w in legacy_widgets(docs.docs[DASHBOARD][-1].pages[0])}
     assert (final[WIDGET].x, final[WIDGET].y) == (0, 8)
     assert (final[other].x, final[other].y) == (6, 4)
 
@@ -520,7 +532,7 @@ async def test_updating_a_chart_pins_its_new_revision_on_the_widget(docs):
     chart = docs.docs[CHART][-1]
     assert chart.visual == "line" and chart.title == "Revenue trend"
     assert chart.encoding.measures[0].field_id == "revenue"
-    widget = docs.docs[DASHBOARD][-1].pages[0].widgets[0]
+    widget = legacy_widgets(docs.docs[DASHBOARD][-1].pages[0])[0]
     assert widget.chart_ref.revision == 2 and outcome.data["revision"] == 2
 
 
@@ -547,7 +559,7 @@ async def test_arranging_includes_every_widget_and_refuses_overlap(docs):
     assert {item.widget_id for item in layout.placements} == {WIDGET, kpi}
     removed = await _run("native_dashboard_arrange", {"remove": [str(kpi)]}, call_id="c4")
     assert removed.ok
-    assert [w.widget_id for w in docs.docs[DASHBOARD][-1].pages[0].widgets] == [WIDGET]
+    assert [w.widget_id for w in legacy_widgets(docs.docs[DASHBOARD][-1].pages[0])] == [WIDGET]
 
 
 @pytest.mark.asyncio
@@ -574,12 +586,12 @@ def _with_widgets(docs: FakeDocuments, *widgets: Any) -> None:
     """Put more widgets on the first page of the dashboard's first revision."""
     start = docs.docs[DASHBOARD][0]
     page = start.pages[0]
-    docs.docs[DASHBOARD][0] = start.model_copy(update={"pages": (
-        page.model_copy(update={"widgets": (*page.widgets, *widgets)}),)})
+    docs.docs[DASHBOARD][0] = _added(start, *(WidgetAdd(page_id=page.page_id, widget=widget)
+                                              for widget in widgets))
 
 
 def _note(widget_id: UUID, title: str, x: int, y: int) -> Any:
-    from app.modules.viz.contracts.dashboards import TextWidget
+    from app.modules.viz.contracts.dashboards_v2 import TextWidget
 
     return TextWidget(widget_id=widget_id, title=title, text="Q3 plan",
                       layout=Layout(x=x, y=y, w=6, h=2))
@@ -613,11 +625,10 @@ async def test_the_filter_approval_and_result_name_the_widgets_it_filters(docs):
 async def test_a_filter_no_widget_uses_says_so_and_a_bad_field_is_shown_before_approval(docs):
     other = UUID("77777777-7777-4777-8777-777777777777")
     start = docs.docs[DASHBOARD][0]
-    from app.modules.viz.contracts.dashboards import Page
+    from app.modules.viz.contracts.dashboards_v2 import PageV2
 
-    docs.docs[DASHBOARD][0] = start.model_copy(update={"pages": (
-        *start.pages, Page(page_id=other, title="Notes page", widgets=(
-            _note(NOTES, "Notes", 0, 0),)))})
+    docs.docs[DASHBOARD][0] = _added(start, PageAdd(page=PageV2(
+        page_id=other, title="Notes page", widgets=(_note(NOTES, "Notes", 0, 0),))))
     page_only = {"filters": [{"title": "City", "field": "city", "scope": "page",
                               "page_id": str(other)}]}
     approval = await _approval("native_dashboard_filters", page_only)
@@ -656,7 +667,7 @@ async def test_the_arrange_approval_names_each_widget_and_what_happens_to_it(doc
 
     outcome = await _run("native_dashboard_arrange", arguments)
     assert outcome.ok, outcome.error
-    assert {w.widget_id for w in docs.docs[DASHBOARD][-1].pages[0].widgets} == {WIDGET}
+    assert {w.widget_id for w in legacy_widgets(docs.docs[DASHBOARD][-1].pages[0])} == {WIDGET}
 
 
 @pytest.mark.asyncio
@@ -1157,7 +1168,7 @@ async def test_a_twenty_step_layout_plan_is_one_revision_with_every_position(doc
     assert outcome.ok, outcome.error
     # One operation and one new revision for the whole plan.
     assert len(docs.applied) == 1 and len(docs.docs[DASHBOARD]) == start + 1
-    widgets = docs.docs[DASHBOARD][-1].pages[0].widgets
+    widgets = legacy_widgets(docs.docs[DASHBOARD][-1].pages[0])
     placed = {widget.widget_id: widget.layout for widget in widgets}
     for step in plan:
         layout = placed[UUID(step["widget_id"])]

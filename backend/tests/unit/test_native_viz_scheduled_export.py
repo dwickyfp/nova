@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from app.core.exceptions import NovaException, StorageError
 from app.modules.task_orchestration.internal_handlers import HANDLERS
 from app.modules.viz import export_schedules as module
+from app.modules.viz.canvas import dashboard_definition
 from app.modules.viz.contracts.charts import ChartDefinition
 from app.modules.viz.contracts.dashboards import DashboardDefinition
 from app.modules.viz.contracts.queries import DatasetQueryResult
@@ -55,7 +56,7 @@ def binding(field: str = "region", dataset: UUID = DATASET) -> dict:
 
 
 def board(filters: list | None = None) -> DashboardDefinition:
-    return DashboardDefinition.model_validate({
+    return dashboard_definition({
         "dashboard_id": str(DASHBOARD), "title": "Sales", "filters": filters or [],
         "pages": [{"page_id": str(PAGE), "title": "Overview", "widgets": [{
             "kind": "chart", "widget_id": str(WIDGET), "layout": {"x": 0, "y": 0, "w": 6, "h": 4},

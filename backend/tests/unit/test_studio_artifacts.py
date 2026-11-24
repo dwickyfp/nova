@@ -17,8 +17,9 @@ import pytest
 from app.core.exceptions import NovaException
 from app.core.metadata_db import MetadataConflict
 from app.modules.viz import dataset_service, studio_artifacts, studio_drafts
+from app.modules.viz.canvas import legacy_widgets
 from app.modules.viz.contracts.charts import ChartDefinition
-from app.modules.viz.contracts.dashboards import ChartWidget
+from app.modules.viz.contracts.dashboards_v2 import ChartWidget
 from app.modules.viz.studio_drafts import DraftError, DraftLocator, ResolvedDraft
 from app.modules.viz.studio_publish import PublishError, Target
 from tests.unit.test_studio_publish import EXISTING, FakeDatasets, docs  # noqa: F401
@@ -283,7 +284,7 @@ async def test_saving_creates_the_dataset_chart_and_widget_as_shown(draft, engin
     for key_name in ("visual", "title", "encoding", "style", "sort", "row_limit"):
         assert getattr(chart, key_name) == getattr(original, key_name)
     dashboard = docs.docs[UUID(result["dashboard_id"])][-1]
-    widgets = [w for page in dashboard.pages for w in page.widgets]
+    widgets = [w for page in dashboard.pages for w in legacy_widgets(page)]
     assert [w.chart_ref.chart_id for w in widgets if isinstance(w, ChartWidget)] == [
         chart.chart_id]
     assert chart.dataset_id in {ref.dataset_id for ref in dashboard.datasets}

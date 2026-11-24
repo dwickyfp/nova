@@ -1,0 +1,161 @@
+{
+  "actions": [],
+  "dashboard_id": "00000000-0000-4000-8000-00000000000a",
+  "datasets": [
+    {
+      "dataset_id": "00000000-0000-4000-8000-000000000384",
+      "revision": 3
+    }
+  ],
+  "description": "All v2 widget kinds and appearances",
+  "filters": [
+    {
+      "field": {
+        "dataset_id": "00000000-0000-4000-8000-000000000384",
+        "dataset_revision": 3,
+        "field_id": "region"
+      },
+      "filter_id": "00000000-0000-4000-8000-000000000011",
+      "kind": "single_value",
+      "scope": {
+        "kind": "global"
+      },
+      "title": "Region"
+    }
+  ],
+  "pages": [
+    {
+      "page_id": "00000000-0000-4000-8000-00000000000b",
+      "title": "Page 1",
+      "widgets": [
+        {
+          "appearance": {
+            "border": false,
+            "padding": "none",
+            "surface": "transparent"
+          },
+          "kind": "text",
+          "layout": {
+            "h": 2,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "style": "title",
+          "text": "Quarterly revenue\nby region",
+          "title": "",
+          "widget_id": "00000000-0000-4000-8000-00000000000c"
+        },
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "kind": "chart",
+          "layout": {
+            "h": 2,
+            "w": 3,
+            "x": 0,
+            "y": 2
+          },
+          "style": {
+            "palette": "single_tone",
+            "show_title": false
+          },
+          "title": "Revenue",
+          "widget_id": "00000000-0000-4000-8000-00000000000d"
+        },
+        {
+          "appearance": {
+            "border": true,
+            "padding": "comfortable",
+            "surface": "card"
+          },
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "filters": {
+            "expression": {
+              "field": {
+                "dataset_id": "00000000-0000-4000-8000-000000000384",
+                "dataset_revision": 3,
+                "field_id": "region"
+              },
+              "op": "eq",
+              "type": "predicate",
+              "values": [
+                {
+                  "type": "string",
+                  "value": "Jakarta"
+                }
+              ]
+            }
+          },
+          "kind": "chart",
+          "layout": {
+            "h": 5,
+            "w": 9,
+            "x": 3,
+            "y": 2
+          },
+          "locked": true,
+          "widget_id": "00000000-0000-4000-8000-00000000000e"
+        },
+        {
+          "alt": "Company logo",
+          "asset_id": "00000000-0000-4000-8000-000000000387",
+          "fit": "cover",
+          "kind": "image",
+          "layout": {
+            "h": 3,
+            "w": 3,
+            "x": 0,
+            "y": 4
+          },
+          "widget_id": "00000000-0000-4000-8000-00000000000f"
+        },
+        {
+          "filter_id": "00000000-0000-4000-8000-000000000011",
+          "kind": "filter",
+          "layout": {
+            "h": 2,
+            "w": 4,
+            "x": 0,
+            "y": 7
+          },
+          "title": "Region",
+          "widget_id": "00000000-0000-4000-8000-000000000010"
+        },
+        {
+          "kind": "spacer",
+          "layout": {
+            "h": 2,
+            "w": 8,
+            "x": 4,
+            "y": 7
+          },
+          "widget_id": "00000000-0000-4000-8000-000000000012"
+        },
+        {
+          "appearance": {
+            "border": false,
+            "padding": "compact",
+            "surface": "card"
+          },
+          "kind": "text",
+          "layout": {
+            "h": 3,
+            "w": 6,
+            "x": 0,
+            "y": 9
+          },
+          "text": "Quarterly revenue\nby region",
+          "title": "Notes",
+          "widget_id": "00000000-0000-4000-8000-000000000013"
+        }
+      ]
+    }
+  ],
+  "title": "Every kind"
+}

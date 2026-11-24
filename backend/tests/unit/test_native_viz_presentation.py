@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.viz.bindings import validate_chart_binding, validate_widget_bindings
+from app.modules.viz.canvas import dashboard_definition
 from app.modules.viz.contracts.charts import AxisStyle, ReferenceBand, TableCalculation
 from app.modules.viz.contracts.common import NumberFormat
 from app.modules.viz.contracts.dashboards import DashboardDefinition
@@ -113,18 +114,18 @@ def test_widget_instances_keep_presentation_and_filters_separate_from_shared_cha
     }
     second = {**deepcopy(widget), "widget_id": uuid4(),
               "layout": {"x": 6, "y": 0, "w": 6, "h": 4}, "style": {"show_legend": True}}
-    board = DashboardDefinition.model_validate({
+    board = dashboard_definition({
         "dashboard_id": uuid4(), "title": "Regions",
         "pages": [{"page_id": uuid4(), "title": "Page 1", "widgets": [widget, second]}],
     })
     charts = {(figure.chart_id, 7): figure}
     validate_widget_bindings(board, charts)
-    left, right = board.pages[0].widgets
+    left, right = board.pages[0].elements
     assert left.chart_ref == right.chart_ref
-    assert left.style.show_legend is False and right.style.show_legend is True
+    assert left.overrides.show_legend is False and right.overrides.show_legend is True
     assert figure.style.show_legend is True
     raw = board.model_dump(mode="json")
-    raw["pages"][0]["widgets"][0]["filters"]["expression"]["field"]["dataset_revision"] = 4
+    raw["pages"][0]["elements"][0]["filters"]["expression"]["field"]["dataset_revision"] = 4
     with pytest.raises(ValueError, match="pinned chart dataset"):
         validate_widget_bindings(DashboardDefinition.model_validate(raw), charts)
 

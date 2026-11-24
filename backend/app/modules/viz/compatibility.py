@@ -7,16 +7,16 @@ from typing import Literal, cast
 from uuid import UUID, uuid5
 
 from .contracts.charts import CartesianEncoding, ChartDefinition, ChartSort, Dimension, Measure
-from .contracts.dashboards import (
-    ChartReference,
+from .contracts.dashboards import ChartReference
+from .contracts.dashboards_v2 import (
     ChartWidget,
-    DashboardDefinition,
     DashboardWidget,
     Layout,
-    Page,
     SpacerWidget,
     TextWidget,
 )
+from .contracts.dashboards_v2 import DashboardDefinitionV2 as DashboardDefinition
+from .contracts.dashboards_v2 import PageV2 as Page
 from .spec import DashboardSpec, WorksheetSpec
 
 

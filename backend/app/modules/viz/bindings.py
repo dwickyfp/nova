@@ -15,7 +15,7 @@ from .contracts.charts import (
     TopN,
 )
 from .contracts.common import Contract
-from .contracts.dashboards import ChartWidget, DashboardDefinition
+from .contracts.dashboards import DashboardDefinition
 from .contracts.datasets import DatasetDefinition, DatasetField, Metric, Parameter, Relationship
 from .contracts.filters import (
     FieldBinding,
@@ -219,12 +219,9 @@ def validate_relationship_binding(
 def validate_widget_bindings(
     dashboard: DashboardDefinition, charts: Mapping[tuple[UUID, int], ChartDefinition],
 ) -> None:
-    for page in dashboard.pages:
-        for widget in page.widgets:
-            if not isinstance(widget, ChartWidget):
-                continue
-            source = charts[(widget.chart_ref.chart_id, widget.chart_ref.revision)]
-            for binding in document_bindings(widget):
-                if (binding.dataset_id != source.dataset_id
-                        or binding.dataset_revision != source.dataset_revision):
-                    raise ValueError("Widget filters must bind to its pinned chart dataset")
+    for _, visual in dashboard.visuals():
+        source = charts[(visual.chart_ref.chart_id, visual.chart_ref.revision)]
+        for binding in document_bindings(visual):
+            if (binding.dataset_id != source.dataset_id
+                    or binding.dataset_revision != source.dataset_revision):
+                raise ValueError("Widget filters must bind to its pinned chart dataset")

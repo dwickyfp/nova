@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { GridStack, type GridItemHTMLElement, type GridStackNode } from 'gridstack'
 import 'gridstack/dist/gridstack.css'
 import { ArrowLeft, ChevronsDown, Copy, Download, ExternalLink, FileSpreadsheet, FileText, Filter, ImageIcon, Link2, MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react'
@@ -14,7 +14,7 @@ import { useChartDocument } from './hooks'
 import { useDatasetDefinition } from '../charts/chart-data'
 import { drillContext, drillDimension, drilledChart, drillOptions, type DrillStep } from '../charts/drill'
 import { NativeChart, type ValueSelection } from '../charts/native-chart'
-import { activeDrop, DROP_TYPE, dropSize, slotAt, type DropItem, type Layout, type Page, type Widget } from './layout'
+import { activeDrop, DROP_TYPE, dropSize, gridWidgets, slotAt, type DropItem, type Layout, type Page, type Widget } from './layout'
 import { ROW_PX, type CanvasPoint, type Collaborator } from './presence'
 import { PresenceCursors } from './presence-ui'
 import { NevaPointer, type NevaActivity } from './neva-pointer'
@@ -269,7 +269,7 @@ export function DashboardCanvas(props: CanvasProps) {
   const [columns, setColumns] = useState<1 | 6 | 12>(12)
   const narrow = columns !== 12
   useEffect(() => { commit.current = props.onLayout }, [props.onLayout])
-  const widgets = props.page.widgets ?? []
+  const widgets = useMemo(() => gridWidgets(props.page), [props.page])
   const layoutsRef = useRef(widgets)
   layoutsRef.current = widgets
   const signature = widgets.map(item => `${item.widget_id}:${item.layout.x},${item.layout.y},${item.layout.w},${item.layout.h}:${item.locked}`).join('|')

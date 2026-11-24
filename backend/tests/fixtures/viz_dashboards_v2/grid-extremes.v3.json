@@ -1,0 +1,209 @@
+{
+  "actions": [],
+  "dashboard_id": "00000000-0000-4000-8000-000000000032",
+  "datasets": [],
+  "description": "",
+  "filters": [],
+  "pages": [
+    {
+      "canvas": {
+        "background": null,
+        "fit": "width",
+        "grid": {
+          "baseline": 8,
+          "columns": 12,
+          "gutter": 12,
+          "margin": 6,
+          "show": true,
+          "snap": true,
+          "snap_to_elements": true
+        },
+        "height": 720000,
+        "size": "custom",
+        "width": 1200
+      },
+      "elements": [
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000034",
+          "filters": null,
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 188,
+            "x": 1006,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": false,
+          "name": "",
+          "overrides": {
+            "palette": null,
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": null
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        },
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000035",
+          "filters": null,
+          "geometry": {
+            "h": 3444,
+            "rotation": 0,
+            "w": 188,
+            "x": 6,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": false,
+          "name": "",
+          "overrides": {
+            "palette": null,
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": null
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000036",
+          "geometry": {
+            "h": 3444,
+            "rotation": 0,
+            "w": 988,
+            "x": 206,
+            "y": 716550
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000037",
+          "filters": null,
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 788,
+            "x": 206,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": false,
+          "name": "",
+          "overrides": {
+            "palette": null,
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": null
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        }
+      ],
+      "mobile": {
+        "hidden": [],
+        "order": []
+      },
+      "page_id": "00000000-0000-4000-8000-000000000033",
+      "tab_order": [],
+      "title": "Edges"
+    }
+  ],
+  "schema_version": 3,
+  "title": "Edges"
+}

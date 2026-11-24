@@ -1,0 +1,15 @@
+[
+ {"operation_id": "00000000-0000-4000-8000-000000000a01", "expected_revision": 4, "changes": [
+   {"op": "layout.apply", "page_id": "00000000-0000-4000-8000-000000000031", "placements": [
+     {"widget_id": "00000000-0000-4000-8000-000000000032", "layout": {"x": 6, "y": 0, "w": 6, "h": 4}},
+     {"widget_id": "00000000-0000-4000-8000-000000000033", "layout": {"x": 0, "y": 0, "w": 6, "h": 4}}]}]},
+ {"operation_id": "00000000-0000-4000-8000-000000000a02", "expected_revision": 2, "changes": [
+   {"op": "widget.add", "page_id": "00000000-0000-4000-8000-000000000031", "widget": {"kind": "text", "widget_id": "00000000-0000-4000-8000-000000000a03", "layout": {"x": 0, "y": 4, "w": 12, "h": 2}, "text": "Notes"}},
+   {"op": "page.add", "page": {"page_id": "00000000-0000-4000-8000-000000000a04", "title": "More"}},
+   {"op": "page.rename", "page_id": "00000000-0000-4000-8000-000000000a04", "title": "Appendix"},
+   {"op": "dashboard.rename", "title": "Sales 2026"}]},
+ {"operation_id": "00000000-0000-4000-8000-000000000a05", "expected_revision": 9, "changes": [
+   {"op": "widget.replace", "page_id": "00000000-0000-4000-8000-000000000031", "widget": {"kind": "chart", "widget_id": "00000000-0000-4000-8000-000000000032", "layout": {"x": 0, "y": 0, "w": 6, "h": 4}, "chart_ref": {"chart_id": "00000000-0000-4000-8000-000000000901", "revision": 3}}},
+   {"op": "widget.remove", "page_id": "00000000-0000-4000-8000-000000000031", "widget_id": "00000000-0000-4000-8000-000000000033"},
+   {"op": "datasets.replace", "datasets": [{"dataset_id": "00000000-0000-4000-8000-000000000900", "revision": 3}]}]}
+]

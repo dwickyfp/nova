@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
+from app.modules.viz.canvas import dashboard_definition, legacy_widgets
 from app.modules.viz.compatibility import (
     ConversionBlocked,
     dashboard_v1_to_v2,
@@ -21,7 +22,9 @@ from app.modules.viz.contracts.common import (
     IntegerValue,
     TimestampValue,
 )
-from app.modules.viz.contracts.dashboards import ChartReference, DashboardDefinition, Layout
+from app.modules.viz.contracts.dashboards import ChartReference
+from app.modules.viz.contracts.dashboards_v2 import DashboardDefinitionV2 as DashboardDefinition
+from app.modules.viz.contracts.dashboards_v2 import Layout
 from app.modules.viz.contracts.datasets import DatasetDefinition, Parameter
 from app.modules.viz.contracts.filters import FilterTree
 from app.modules.viz.operations import apply_operation
@@ -145,7 +148,7 @@ def test_overlap_and_duplicate_ids_across_pages_rejected():
 
 
 def test_atomic_reflow_can_swap_neighbors_without_mutating_original():
-    definition = DashboardDefinition.model_validate(dashboard())
+    definition = dashboard_definition(dashboard())
     operation = Operation.model_validate({
         "operation_id": str(uuid4()), "expected_revision": 1,
         "changes": [{"op": "layout.apply", "page_id": PAGE, "placements": [
@@ -154,31 +157,32 @@ def test_atomic_reflow_can_swap_neighbors_without_mutating_original():
         ]}],
     })
     updated = apply_operation(definition, operation)
-    assert [widget.layout.x for widget in updated.pages[0].widgets] == [6, 0]
-    assert [widget.layout.x for widget in definition.pages[0].widgets] == [0, 6]
+    assert [widget.layout.x for widget in legacy_widgets(updated.pages[0])] == [6, 0]
+    assert [widget.layout.x for widget in legacy_widgets(definition.pages[0])] == [0, 6]
 
 
-def test_partial_reflow_and_forged_actor_are_refused():
-    definition = DashboardDefinition.model_validate(dashboard())
+def test_partial_reflow_is_allowed_and_forged_actor_is_refused():
+    definition = dashboard_definition(dashboard())
     payload = {"operation_id": str(uuid4()), "expected_revision": 1, "changes": [{
         "op": "layout.apply", "page_id": PAGE, "placements": [{
             "widget_id": WIDGET_A, "layout": {"x": 0, "y": 5, "w": 6, "h": 4},
         }],
     }]}
-    with pytest.raises(ValueError, match="every page widget"):
-        apply_operation(definition, Operation.model_validate(payload))
+    # On the canvas a legacy reflow may move just some widgets; the rest stay put.
+    moved = legacy_widgets(apply_operation(definition, Operation.model_validate(payload)).pages[0])
+    assert [(w.layout.x, w.layout.y) for w in moved] == [(0, 5), (6, 0)]
     payload["actor"] = "root"
     with pytest.raises(ValidationError):
         Operation.model_validate(payload)
 
 
 def test_batch_failure_preserves_original_document():
-    definition = DashboardDefinition.model_validate(dashboard())
+    definition = dashboard_definition(dashboard())
     payload = {"operation_id": str(uuid4()), "expected_revision": 1, "changes": [
         {"op": "dashboard.rename", "title": "Changed"},
         {"op": "widget.remove", "page_id": PAGE, "widget_id": str(uuid4())},
     ]}
-    with pytest.raises(ValueError, match="Unknown widget"):
+    with pytest.raises(ValueError, match="Unknown"):
         apply_operation(definition, Operation.model_validate(payload))
     assert definition.title == "Sales"
 
@@ -416,16 +420,16 @@ def test_incomplete_dashboard_links_are_refused(extra, reason):
 
 def test_removing_a_linked_chart_takes_its_link_with_it():
     target = uuid4()
-    linked = DashboardDefinition.model_validate(_linked(
+    linked = dashboard_definition(_linked(
         target_dashboard_id=str(target), target_workspace_id="abc", label="Detail"))
     page = linked.pages[0]
-    widget = page.widgets[0]
+    widget = legacy_widgets(page)[0]
     operation = Operation.model_validate({
         "operation_id": str(uuid4()), "expected_revision": 1,
         "changes": [{"op": "widget.remove", "page_id": str(page.page_id),
                      "widget_id": str(widget.widget_id)}]})
     after = apply_operation(linked, operation)
-    assert after.actions == () and not after.pages[0].widgets
+    assert after.actions == () and not legacy_widgets(after.pages[0])
 
 
 def test_explicit_actions_naming_a_missing_widget_are_still_refused():
@@ -438,7 +442,8 @@ def test_explicit_actions_naming_a_missing_widget_are_still_refused():
 
 def test_a_page_holds_at_most_one_hundred_widgets():
     """NDV-GRID-019: the page cap; more widgets go on another page."""
-    from app.modules.viz.contracts.dashboards import Page, TextWidget
+    from app.modules.viz.contracts.dashboards_v2 import PageV2 as Page
+    from app.modules.viz.contracts.dashboards_v2 import TextWidget
 
     def widgets(count):
         return tuple(TextWidget(widget_id=uuid4(), text=f"Note {index}",

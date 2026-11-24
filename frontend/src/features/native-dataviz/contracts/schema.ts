@@ -72,6 +72,74 @@ const schema = {
       "title": "And",
       "type": "object"
     },
+    "AnnotationElement": {
+      "additionalProperties": false,
+      "properties": {
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "annotation",
+          "default": "annotation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "placement": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "n",
+            "e",
+            "s",
+            "w"
+          ],
+          "title": "Placement",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        },
+        "target": {
+          "$ref": "#/$defs/DatumAnchor"
+        },
+        "text": {
+          "$ref": "#/$defs/RichText"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry",
+        "target"
+      ],
+      "title": "AnnotationElement",
+      "type": "object"
+    },
     "AxisStyle": {
       "additionalProperties": false,
       "properties": {
@@ -146,6 +214,57 @@ const schema = {
         "value"
       ],
       "title": "BooleanValue",
+      "type": "object"
+    },
+    "CanvasGrid": {
+      "additionalProperties": false,
+      "description": "Authoring aid only: columns and baseline rows to snap to, shown or hidden.",
+      "properties": {
+        "baseline": {
+          "default": 8,
+          "maximum": 64,
+          "minimum": 2,
+          "title": "Baseline",
+          "type": "integer"
+        },
+        "columns": {
+          "default": 12,
+          "maximum": 24,
+          "minimum": 1,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "gutter": {
+          "default": 16,
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Gutter",
+          "type": "integer"
+        },
+        "margin": {
+          "default": 24,
+          "maximum": 256,
+          "minimum": 0,
+          "title": "Margin",
+          "type": "integer"
+        },
+        "show": {
+          "default": true,
+          "title": "Show",
+          "type": "boolean"
+        },
+        "snap": {
+          "default": true,
+          "title": "Snap",
+          "type": "boolean"
+        },
+        "snap_to_elements": {
+          "default": true,
+          "title": "Snap To Elements",
+          "type": "boolean"
+        }
+      },
+      "title": "CanvasGrid",
       "type": "object"
     },
     "CartesianEncoding": {
@@ -816,11 +935,135 @@ const schema = {
       "title": "ConditionalFormat",
       "type": "object"
     },
+    "ConnectorElement": {
+      "additionalProperties": false,
+      "description": "A line or arrow; its path is recomputed from the endpoints when they move.",
+      "properties": {
+        "curve": {
+          "default": "straight",
+          "enum": [
+            "straight",
+            "arc",
+            "elbow"
+          ],
+          "title": "Curve",
+          "type": "string"
+        },
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "end": {
+          "discriminator": {
+            "mapping": {
+              "datum": "#/$defs/DatumEndpoint",
+              "element": "#/$defs/ElementEndpoint",
+              "point": "#/$defs/PointEndpoint"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ElementEndpoint"
+            },
+            {
+              "$ref": "#/$defs/DatumEndpoint"
+            },
+            {
+              "$ref": "#/$defs/PointEndpoint"
+            }
+          ],
+          "title": "End"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "head": {
+          "default": "arrow",
+          "enum": [
+            "none",
+            "arrow",
+            "dot"
+          ],
+          "title": "Head",
+          "type": "string"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "connector",
+          "default": "connector",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "start": {
+          "discriminator": {
+            "mapping": {
+              "datum": "#/$defs/DatumEndpoint",
+              "element": "#/$defs/ElementEndpoint",
+              "point": "#/$defs/PointEndpoint"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ElementEndpoint"
+            },
+            {
+              "$ref": "#/$defs/DatumEndpoint"
+            },
+            {
+              "$ref": "#/$defs/PointEndpoint"
+            }
+          ],
+          "title": "Start"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry",
+        "start",
+        "end"
+      ],
+      "title": "ConnectorElement",
+      "type": "object"
+    },
     "DashboardCreate": {
       "additionalProperties": false,
       "properties": {
         "definition": {
-          "$ref": "#/$defs/DashboardDefinition"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DashboardDefinitionV2"
+            },
+            {
+              "$ref": "#/$defs/DashboardDefinition"
+            }
+          ],
+          "title": "Definition"
         },
         "workspace_id": {
           "maxLength": 128,
@@ -903,12 +1146,6 @@ const schema = {
           "title": "Actions",
           "type": "array"
         },
-        "columns": {
-          "const": 12,
-          "default": 12,
-          "title": "Columns",
-          "type": "integer"
-        },
         "dashboard_id": {
           "format": "uuid",
           "title": "Dashboard Id",
@@ -948,6 +1185,83 @@ const schema = {
           "type": "array"
         },
         "schema_version": {
+          "const": 3,
+          "default": 3,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "title",
+        "pages"
+      ],
+      "title": "DashboardDefinition",
+      "type": "object"
+    },
+    "DashboardDefinitionV2": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Interaction"
+          },
+          "maxItems": 64,
+          "title": "Actions",
+          "type": "array"
+        },
+        "columns": {
+          "const": 12,
+          "default": 12,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "dashboard_id": {
+          "format": "uuid",
+          "title": "Dashboard Id",
+          "type": "string"
+        },
+        "datasets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DatasetReference"
+          },
+          "maxItems": 128,
+          "title": "Datasets",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Description",
+          "type": "string"
+        },
+        "filters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FilterDefinition"
+          },
+          "maxItems": 64,
+          "title": "Filters",
+          "type": "array"
+        },
+        "pages": {
+          "items": {
+            "$ref": "#/$defs/PageV2"
+          },
+          "maxItems": 15,
+          "minItems": 1,
+          "title": "Pages",
+          "type": "array"
+        },
+        "schema_version": {
           "const": 2,
           "default": 2,
           "title": "Schema Version",
@@ -965,7 +1279,7 @@ const schema = {
         "title",
         "pages"
       ],
-      "title": "DashboardDefinition",
+      "title": "DashboardDefinitionV2",
       "type": "object"
     },
     "DatasetDefinition": {
@@ -1716,6 +2030,143 @@ const schema = {
       "title": "DateValue",
       "type": "object"
     },
+    "DatumAnchor": {
+      "additionalProperties": false,
+      "description": "A data point inside a visual, resolved from the viewer's own query result.\n\nA point the viewer cannot see (row filter, role, filter) hides whatever is\nanchored to it; it is never guessed or shown as a placeholder.",
+      "properties": {
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "match": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DatumMatch"
+          },
+          "maxItems": 8,
+          "title": "Match",
+          "type": "array"
+        },
+        "measure_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measure Id"
+        },
+        "missing": {
+          "const": "hide",
+          "default": "hide",
+          "title": "Missing",
+          "type": "string"
+        },
+        "rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "max",
+                "min",
+                "first",
+                "last"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule"
+        }
+      },
+      "required": [
+        "element_id"
+      ],
+      "title": "DatumAnchor",
+      "type": "object"
+    },
+    "DatumEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "$ref": "#/$defs/DatumAnchor"
+        },
+        "kind": {
+          "const": "datum",
+          "default": "datum",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "anchor"
+      ],
+      "title": "DatumEndpoint",
+      "type": "object"
+    },
+    "DatumMatch": {
+      "additionalProperties": false,
+      "properties": {
+        "field_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Field Id",
+          "type": "string"
+        },
+        "value": {
+          "discriminator": {
+            "mapping": {
+              "boolean": "#/$defs/BooleanValue",
+              "date": "#/$defs/DateValue",
+              "decimal": "#/$defs/DecimalValue",
+              "float": "#/$defs/FloatValue",
+              "integer": "#/$defs/IntegerValue",
+              "string": "#/$defs/StringValue",
+              "timestamp": "#/$defs/TimestampValue"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StringValue"
+            },
+            {
+              "$ref": "#/$defs/IntegerValue"
+            },
+            {
+              "$ref": "#/$defs/DecimalValue"
+            },
+            {
+              "$ref": "#/$defs/FloatValue"
+            },
+            {
+              "$ref": "#/$defs/BooleanValue"
+            },
+            {
+              "$ref": "#/$defs/DateValue"
+            },
+            {
+              "$ref": "#/$defs/TimestampValue"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "field_id",
+        "value"
+      ],
+      "title": "DatumMatch",
+      "type": "object"
+    },
     "DecimalValue": {
       "additionalProperties": false,
       "properties": {
@@ -2043,6 +2494,832 @@ const schema = {
       "title": "DocumentSummary",
       "type": "object"
     },
+    "ElementEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "element",
+          "default": "element",
+          "title": "Kind",
+          "type": "string"
+        },
+        "side": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "n",
+            "e",
+            "s",
+            "w"
+          ],
+          "title": "Side",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_id"
+      ],
+      "title": "ElementEndpoint",
+      "type": "object"
+    },
+    "ElementPatch": {
+      "additionalProperties": false,
+      "description": "Properties to set on one element; anything omitted is unchanged.\n\nThe merged element is validated again, so a property its kind does not have\nis refused. ``element_id``, ``kind`` and group ``children`` cannot change here.",
+      "properties": {
+        "alt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alt"
+        },
+        "asset_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset Id"
+        },
+        "chart_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChartReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "curve": {
+          "anyOf": [
+            {
+              "enum": [
+                "straight",
+                "arc",
+                "elbow"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Curve"
+        },
+        "decorative": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decorative"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "datum": "#/$defs/DatumEndpoint",
+                  "element": "#/$defs/ElementEndpoint",
+                  "point": "#/$defs/PointEndpoint"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ElementEndpoint"
+                },
+                {
+                  "$ref": "#/$defs/DatumEndpoint"
+                },
+                {
+                  "$ref": "#/$defs/PointEndpoint"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "filter_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Filter Id"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilterTree"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fit": {
+          "anyOf": [
+            {
+              "enum": [
+                "contain",
+                "cover"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fit"
+        },
+        "geometry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Geometry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "head": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "arrow",
+                "dot"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Head"
+        },
+        "hidden": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hidden"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "enum": [
+                "activity",
+                "arrow-down",
+                "arrow-down-right",
+                "arrow-left",
+                "arrow-right",
+                "arrow-up",
+                "arrow-up-right",
+                "award",
+                "banknote",
+                "briefcase",
+                "building-2",
+                "calendar",
+                "car",
+                "chart-bar",
+                "chart-column",
+                "chart-line",
+                "chart-pie",
+                "circle-alert",
+                "circle-check",
+                "circle-x",
+                "clock",
+                "cloud",
+                "credit-card",
+                "database",
+                "dollar-sign",
+                "droplet",
+                "factory",
+                "flag",
+                "fuel",
+                "gauge",
+                "globe",
+                "graduation-cap",
+                "heart",
+                "heart-pulse",
+                "house",
+                "info",
+                "leaf",
+                "lightbulb",
+                "lock",
+                "mail",
+                "map",
+                "map-pin",
+                "message-square",
+                "package",
+                "percent",
+                "phone",
+                "plane",
+                "server",
+                "shield-check",
+                "ship",
+                "shopping-bag",
+                "shopping-cart",
+                "sparkles",
+                "star",
+                "store",
+                "sun",
+                "target",
+                "thumbs-down",
+                "thumbs-up",
+                "timer",
+                "trending-down",
+                "trending-up",
+                "triangle-alert",
+                "trophy",
+                "truck",
+                "user",
+                "user-check",
+                "users",
+                "wallet",
+                "warehouse",
+                "zap"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Icon"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "locked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Locked"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "overrides": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChartOverrides"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "placement": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "n",
+                "e",
+                "s",
+                "w"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placement"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "enum": [
+                "title",
+                "heading",
+                "body",
+                "caption"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "shape": {
+          "anyOf": [
+            {
+              "enum": [
+                "rect",
+                "ellipse",
+                "line",
+                "pill",
+                "triangle"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shape"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "datum": "#/$defs/DatumEndpoint",
+                  "element": "#/$defs/ElementEndpoint",
+                  "point": "#/$defs/PointEndpoint"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ElementEndpoint"
+                },
+                {
+                  "$ref": "#/$defs/DatumEndpoint"
+                },
+                {
+                  "$ref": "#/$defs/PointEndpoint"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElementStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DatumAnchor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RichText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "title": "ElementPatch",
+      "type": "object"
+    },
+    "ElementPlacement": {
+      "additionalProperties": false,
+      "properties": {
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry"
+      ],
+      "title": "ElementPlacement",
+      "type": "object"
+    },
+    "ElementStyle": {
+      "additionalProperties": false,
+      "properties": {
+        "fill": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "gradient": "#/$defs/GradientFill",
+                  "image": "#/$defs/ImageFill",
+                  "solid": "#/$defs/SolidFill"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SolidFill"
+                },
+                {
+                  "$ref": "#/$defs/GradientFill"
+                },
+                {
+                  "$ref": "#/$defs/ImageFill"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fill"
+        },
+        "opacity": {
+          "default": 100,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "integer"
+        },
+        "padding": {
+          "default": 0,
+          "enum": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            24
+          ],
+          "title": "Padding",
+          "type": "integer"
+        },
+        "radius": {
+          "default": 0,
+          "enum": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            9999
+          ],
+          "title": "Radius",
+          "type": "integer"
+        },
+        "shadow": {
+          "default": "none",
+          "enum": [
+            "none",
+            "sm",
+            "md"
+          ],
+          "title": "Shadow",
+          "type": "string"
+        },
+        "stroke": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stroke"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ElementStyle",
+      "type": "object"
+    },
+    "ElementUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "set": {
+          "$ref": "#/$defs/ElementPatch"
+        }
+      },
+      "required": [
+        "element_id",
+        "set"
+      ],
+      "title": "ElementUpdate",
+      "type": "object"
+    },
+    "ElementsAdd": {
+      "additionalProperties": false,
+      "description": "Add elements as one block: in front, at the back, or just above another.",
+      "properties": {
+        "elements": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "annotation": "#/$defs/AnnotationElement",
+                "connector": "#/$defs/ConnectorElement",
+                "filter": "#/$defs/FilterElement",
+                "group": "#/$defs/GroupElement",
+                "icon": "#/$defs/IconElement",
+                "image": "#/$defs/ImageElement",
+                "shape": "#/$defs/ShapeElement",
+                "text": "#/$defs/TextElement",
+                "visual": "#/$defs/VisualElement"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/VisualElement"
+              },
+              {
+                "$ref": "#/$defs/FilterElement"
+              },
+              {
+                "$ref": "#/$defs/TextElement"
+              },
+              {
+                "$ref": "#/$defs/ImageElement"
+              },
+              {
+                "$ref": "#/$defs/ShapeElement"
+              },
+              {
+                "$ref": "#/$defs/IconElement"
+              },
+              {
+                "$ref": "#/$defs/ConnectorElement"
+              },
+              {
+                "$ref": "#/$defs/AnnotationElement"
+              },
+              {
+                "$ref": "#/$defs/GroupElement"
+              }
+            ]
+          },
+          "maxItems": 150,
+          "minItems": 1,
+          "title": "Elements",
+          "type": "array"
+        },
+        "op": {
+          "const": "elements.add",
+          "default": "elements.add",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        },
+        "stack": {
+          "anyOf": [
+            {
+              "enum": [
+                "front",
+                "back"
+              ],
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/StackAbove"
+            }
+          ],
+          "default": "front",
+          "title": "Stack"
+        }
+      },
+      "required": [
+        "page_id",
+        "elements"
+      ],
+      "title": "ElementsAdd",
+      "type": "object"
+    },
+    "ElementsArrange": {
+      "additionalProperties": false,
+      "description": "New geometry for some elements of one page, applied together.",
+      "properties": {
+        "op": {
+          "const": "elements.arrange",
+          "default": "elements.arrange",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        },
+        "placements": {
+          "items": {
+            "$ref": "#/$defs/ElementPlacement"
+          },
+          "maxItems": 150,
+          "minItems": 1,
+          "title": "Placements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_id",
+        "placements"
+      ],
+      "title": "ElementsArrange",
+      "type": "object"
+    },
+    "ElementsRemove": {
+      "additionalProperties": false,
+      "description": "Remove elements; connectors, annotations and interactions that depended on them go too.",
+      "properties": {
+        "element_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 150,
+          "minItems": 1,
+          "title": "Element Ids",
+          "type": "array"
+        },
+        "op": {
+          "const": "elements.remove",
+          "default": "elements.remove",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "element_ids"
+      ],
+      "title": "ElementsRemove",
+      "type": "object"
+    },
+    "ElementsReorder": {
+      "additionalProperties": false,
+      "description": "The complete back-to-front order of the page's top-level elements.",
+      "properties": {
+        "element_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 150,
+          "title": "Element Ids",
+          "type": "array"
+        },
+        "op": {
+          "const": "elements.reorder",
+          "default": "elements.reorder",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "element_ids"
+      ],
+      "title": "ElementsReorder",
+      "type": "object"
+    },
+    "ElementsUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "elements.update",
+          "default": "elements.update",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        },
+        "updates": {
+          "items": {
+            "$ref": "#/$defs/ElementUpdate"
+          },
+          "maxItems": 150,
+          "minItems": 1,
+          "title": "Updates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_id",
+        "updates"
+      ],
+      "title": "ElementsUpdate",
+      "type": "object"
+    },
     "EventPage": {
       "additionalProperties": false,
       "properties": {
@@ -2278,6 +3555,67 @@ const schema = {
       "title": "FilterDefinition",
       "type": "object"
     },
+    "FilterElement": {
+      "additionalProperties": false,
+      "properties": {
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "filter_id": {
+          "format": "uuid",
+          "title": "Filter Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "filter",
+          "default": "filter",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        },
+        "title": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry",
+        "filter_id"
+      ],
+      "title": "FilterElement",
+      "type": "object"
+    },
     "FilterScope": {
       "additionalProperties": false,
       "properties": {
@@ -2473,6 +3811,135 @@ const schema = {
       "title": "FlowEncoding",
       "type": "object"
     },
+    "Geometry": {
+      "additionalProperties": false,
+      "description": "Canvas pixels relative to the page, or to the group for group children.",
+      "properties": {
+        "h": {
+          "maximum": 750128,
+          "minimum": 1,
+          "title": "H",
+          "type": "integer"
+        },
+        "rotation": {
+          "default": 0,
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "title": "Rotation",
+          "type": "integer"
+        },
+        "w": {
+          "maximum": 4224,
+          "minimum": 1,
+          "title": "W",
+          "type": "integer"
+        },
+        "x": {
+          "maximum": 4160,
+          "minimum": -64,
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 750064,
+          "minimum": -64,
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "title": "Geometry",
+      "type": "object"
+    },
+    "GradientFill": {
+      "additionalProperties": false,
+      "properties": {
+        "angle": {
+          "default": 180,
+          "maximum": 359,
+          "minimum": 0,
+          "title": "Angle",
+          "type": "integer"
+        },
+        "end": {
+          "enum": [
+            "background",
+            "card",
+            "muted",
+            "accent",
+            "brand",
+            "primary",
+            "foreground",
+            "muted-foreground",
+            "border",
+            "surface-border",
+            "success",
+            "warning",
+            "destructive",
+            "chart-1",
+            "chart-2",
+            "chart-3",
+            "chart-4",
+            "chart-5",
+            "chart-6",
+            "chart-7",
+            "chart-8",
+            "chart-9"
+          ],
+          "title": "End",
+          "type": "string"
+        },
+        "kind": {
+          "const": "gradient",
+          "default": "gradient",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start": {
+          "enum": [
+            "background",
+            "card",
+            "muted",
+            "accent",
+            "brand",
+            "primary",
+            "foreground",
+            "muted-foreground",
+            "border",
+            "surface-border",
+            "success",
+            "warning",
+            "destructive",
+            "chart-1",
+            "chart-2",
+            "chart-3",
+            "chart-4",
+            "chart-5",
+            "chart-6",
+            "chart-7",
+            "chart-8",
+            "chart-9"
+          ],
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "GradientFill",
+      "type": "object"
+    },
     "Grant": {
       "additionalProperties": false,
       "properties": {
@@ -2646,6 +4113,107 @@ const schema = {
       "title": "GrantsReplace",
       "type": "object"
     },
+    "GroupElement": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "annotation": "#/$defs/AnnotationElement",
+                "connector": "#/$defs/ConnectorElement",
+                "filter": "#/$defs/FilterElement",
+                "group": "#/$defs/GroupElement",
+                "icon": "#/$defs/IconElement",
+                "image": "#/$defs/ImageElement",
+                "shape": "#/$defs/ShapeElement",
+                "text": "#/$defs/TextElement",
+                "visual": "#/$defs/VisualElement"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/VisualElement"
+              },
+              {
+                "$ref": "#/$defs/FilterElement"
+              },
+              {
+                "$ref": "#/$defs/TextElement"
+              },
+              {
+                "$ref": "#/$defs/ImageElement"
+              },
+              {
+                "$ref": "#/$defs/ShapeElement"
+              },
+              {
+                "$ref": "#/$defs/IconElement"
+              },
+              {
+                "$ref": "#/$defs/ConnectorElement"
+              },
+              {
+                "$ref": "#/$defs/AnnotationElement"
+              },
+              {
+                "$ref": "#/$defs/GroupElement"
+              }
+            ]
+          },
+          "maxItems": 150,
+          "minItems": 1,
+          "title": "Children",
+          "type": "array"
+        },
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "group",
+          "default": "group",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry",
+        "children"
+      ],
+      "title": "GroupElement",
+      "type": "object"
+    },
     "HeatmapEncoding": {
       "additionalProperties": false,
       "properties": {
@@ -2707,6 +4275,254 @@ const schema = {
         "value"
       ],
       "title": "HierarchyEncoding",
+      "type": "object"
+    },
+    "IconElement": {
+      "additionalProperties": false,
+      "properties": {
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "icon": {
+          "enum": [
+            "activity",
+            "arrow-down",
+            "arrow-down-right",
+            "arrow-left",
+            "arrow-right",
+            "arrow-up",
+            "arrow-up-right",
+            "award",
+            "banknote",
+            "briefcase",
+            "building-2",
+            "calendar",
+            "car",
+            "chart-bar",
+            "chart-column",
+            "chart-line",
+            "chart-pie",
+            "circle-alert",
+            "circle-check",
+            "circle-x",
+            "clock",
+            "cloud",
+            "credit-card",
+            "database",
+            "dollar-sign",
+            "droplet",
+            "factory",
+            "flag",
+            "fuel",
+            "gauge",
+            "globe",
+            "graduation-cap",
+            "heart",
+            "heart-pulse",
+            "house",
+            "info",
+            "leaf",
+            "lightbulb",
+            "lock",
+            "mail",
+            "map",
+            "map-pin",
+            "message-square",
+            "package",
+            "percent",
+            "phone",
+            "plane",
+            "server",
+            "shield-check",
+            "ship",
+            "shopping-bag",
+            "shopping-cart",
+            "sparkles",
+            "star",
+            "store",
+            "sun",
+            "target",
+            "thumbs-down",
+            "thumbs-up",
+            "timer",
+            "trending-down",
+            "trending-up",
+            "triangle-alert",
+            "trophy",
+            "truck",
+            "user",
+            "user-check",
+            "users",
+            "wallet",
+            "warehouse",
+            "zap"
+          ],
+          "title": "Icon",
+          "type": "string"
+        },
+        "kind": {
+          "const": "icon",
+          "default": "icon",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Label",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry",
+        "icon"
+      ],
+      "title": "IconElement",
+      "type": "object"
+    },
+    "ImageElement": {
+      "additionalProperties": false,
+      "properties": {
+        "alt": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Alt",
+          "type": "string"
+        },
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "fit": {
+          "default": "contain",
+          "enum": [
+            "contain",
+            "cover"
+          ],
+          "title": "Fit",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "image",
+          "default": "image",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        },
+        "title": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry",
+        "asset_id",
+        "alt"
+      ],
+      "title": "ImageElement",
+      "type": "object"
+    },
+    "ImageFill": {
+      "additionalProperties": false,
+      "description": "A managed image asset; never an external URL.",
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "dim": {
+          "default": 0,
+          "maximum": 90,
+          "minimum": 0,
+          "title": "Dim",
+          "type": "integer"
+        },
+        "fit": {
+          "default": "cover",
+          "enum": [
+            "cover",
+            "contain"
+          ],
+          "title": "Fit",
+          "type": "string"
+        },
+        "kind": {
+          "const": "image",
+          "default": "image",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id"
+      ],
+      "title": "ImageFill",
       "type": "object"
     },
     "ImageWidget": {
@@ -2997,6 +4813,40 @@ const schema = {
       "title": "LayoutChange",
       "type": "object"
     },
+    "LegacySpacer": {
+      "additionalProperties": false,
+      "description": "A v2 spacer, kept so the upcast stays lossless; the canvas never draws it.",
+      "properties": {
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        },
+        "title": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry"
+      ],
+      "title": "LegacySpacer",
+      "type": "object"
+    },
     "LocalMetricSource": {
       "additionalProperties": false,
       "properties": {
@@ -3258,6 +5108,34 @@ const schema = {
         "scope"
       ],
       "title": "Metric",
+      "type": "object"
+    },
+    "MobileProjection": {
+      "additionalProperties": false,
+      "description": "One-column phone reading order: a projection, not a second layout.",
+      "properties": {
+        "hidden": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 150,
+          "title": "Hidden",
+          "type": "array"
+        },
+        "order": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 150,
+          "title": "Order",
+          "type": "array"
+        }
+      },
+      "title": "MobileProjection",
       "type": "object"
     },
     "Not": {
@@ -3620,12 +5498,20 @@ const schema = {
                 "actions.replace": "#/$defs/ActionsReplace",
                 "dashboard.rename": "#/$defs/Rename",
                 "datasets.replace": "#/$defs/DatasetsReplace",
+                "elements.add": "#/$defs/ElementsAdd",
+                "elements.arrange": "#/$defs/ElementsArrange",
+                "elements.remove": "#/$defs/ElementsRemove",
+                "elements.reorder": "#/$defs/ElementsReorder",
+                "elements.update": "#/$defs/ElementsUpdate",
                 "filters.replace": "#/$defs/FiltersReplace",
                 "layout.apply": "#/$defs/LayoutChange",
                 "page.add": "#/$defs/PageAdd",
+                "page.canvas.set": "#/$defs/PageCanvasSet",
+                "page.mobile.set": "#/$defs/PageMobileSet",
                 "page.remove": "#/$defs/PageRemove",
                 "page.rename": "#/$defs/PageRename",
                 "page.reorder": "#/$defs/PageOrder",
+                "page.tab_order.set": "#/$defs/PageTabOrderSet",
                 "widget.add": "#/$defs/WidgetAdd",
                 "widget.remove": "#/$defs/WidgetRemove",
                 "widget.replace": "#/$defs/WidgetReplace"
@@ -3668,6 +5554,30 @@ const schema = {
               },
               {
                 "$ref": "#/$defs/DatasetsReplace"
+              },
+              {
+                "$ref": "#/$defs/ElementsAdd"
+              },
+              {
+                "$ref": "#/$defs/ElementsUpdate"
+              },
+              {
+                "$ref": "#/$defs/ElementsRemove"
+              },
+              {
+                "$ref": "#/$defs/ElementsArrange"
+              },
+              {
+                "$ref": "#/$defs/ElementsReorder"
+              },
+              {
+                "$ref": "#/$defs/PageCanvasSet"
+              },
+              {
+                "$ref": "#/$defs/PageTabOrderSet"
+              },
+              {
+                "$ref": "#/$defs/PageMobileSet"
               }
             ]
           },
@@ -3793,51 +5703,92 @@ const schema = {
     "Page": {
       "additionalProperties": false,
       "properties": {
+        "canvas": {
+          "$ref": "#/$defs/PageCanvas"
+        },
+        "elements": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "annotation": "#/$defs/AnnotationElement",
+                "connector": "#/$defs/ConnectorElement",
+                "filter": "#/$defs/FilterElement",
+                "group": "#/$defs/GroupElement",
+                "icon": "#/$defs/IconElement",
+                "image": "#/$defs/ImageElement",
+                "shape": "#/$defs/ShapeElement",
+                "text": "#/$defs/TextElement",
+                "visual": "#/$defs/VisualElement"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/VisualElement"
+              },
+              {
+                "$ref": "#/$defs/FilterElement"
+              },
+              {
+                "$ref": "#/$defs/TextElement"
+              },
+              {
+                "$ref": "#/$defs/ImageElement"
+              },
+              {
+                "$ref": "#/$defs/ShapeElement"
+              },
+              {
+                "$ref": "#/$defs/IconElement"
+              },
+              {
+                "$ref": "#/$defs/ConnectorElement"
+              },
+              {
+                "$ref": "#/$defs/AnnotationElement"
+              },
+              {
+                "$ref": "#/$defs/GroupElement"
+              }
+            ]
+          },
+          "maxItems": 150,
+          "title": "Elements",
+          "type": "array"
+        },
+        "legacy_spacers": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LegacySpacer"
+          },
+          "maxItems": 100,
+          "title": "Legacy Spacers",
+          "type": "array"
+        },
+        "mobile": {
+          "$ref": "#/$defs/MobileProjection"
+        },
         "page_id": {
           "format": "uuid",
           "title": "Page Id",
           "type": "string"
+        },
+        "tab_order": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 150,
+          "title": "Tab Order",
+          "type": "array"
         },
         "title": {
           "maxLength": 256,
           "minLength": 1,
           "title": "Title",
           "type": "string"
-        },
-        "widgets": {
-          "default": [],
-          "items": {
-            "discriminator": {
-              "mapping": {
-                "chart": "#/$defs/ChartWidget",
-                "filter": "#/$defs/FilterWidget",
-                "image": "#/$defs/ImageWidget",
-                "spacer": "#/$defs/SpacerWidget",
-                "text": "#/$defs/TextWidget"
-              },
-              "propertyName": "kind"
-            },
-            "oneOf": [
-              {
-                "$ref": "#/$defs/ChartWidget"
-              },
-              {
-                "$ref": "#/$defs/TextWidget"
-              },
-              {
-                "$ref": "#/$defs/ImageWidget"
-              },
-              {
-                "$ref": "#/$defs/FilterWidget"
-              },
-              {
-                "$ref": "#/$defs/SpacerWidget"
-              }
-            ]
-          },
-          "maxItems": 100,
-          "title": "Widgets",
-          "type": "array"
         }
       },
       "required": [
@@ -3857,13 +5808,147 @@ const schema = {
           "type": "string"
         },
         "page": {
-          "$ref": "#/$defs/Page"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PageV2"
+            },
+            {
+              "$ref": "#/$defs/Page"
+            }
+          ],
+          "title": "Page"
         }
       },
       "required": [
         "page"
       ],
       "title": "PageAdd",
+      "type": "object"
+    },
+    "PageCanvas": {
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "gradient": "#/$defs/GradientFill",
+                  "image": "#/$defs/ImageFill",
+                  "solid": "#/$defs/SolidFill"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SolidFill"
+                },
+                {
+                  "$ref": "#/$defs/GradientFill"
+                },
+                {
+                  "$ref": "#/$defs/ImageFill"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Background"
+        },
+        "fit": {
+          "default": "page",
+          "enum": [
+            "page",
+            "width",
+            "actual"
+          ],
+          "title": "Fit",
+          "type": "string"
+        },
+        "grid": {
+          "$ref": "#/$defs/CanvasGrid"
+        },
+        "height": {
+          "default": 720,
+          "maximum": 750000,
+          "minimum": 200,
+          "title": "Height",
+          "type": "integer"
+        },
+        "size": {
+          "default": "16:9",
+          "enum": [
+            "16:9",
+            "4:3",
+            "a4-landscape",
+            "letter-landscape",
+            "custom"
+          ],
+          "title": "Size",
+          "type": "string"
+        },
+        "width": {
+          "default": 1280,
+          "maximum": 4096,
+          "minimum": 320,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "title": "PageCanvas",
+      "type": "object"
+    },
+    "PageCanvasSet": {
+      "additionalProperties": false,
+      "properties": {
+        "canvas": {
+          "$ref": "#/$defs/PageCanvas"
+        },
+        "op": {
+          "const": "page.canvas.set",
+          "default": "page.canvas.set",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "canvas"
+      ],
+      "title": "PageCanvasSet",
+      "type": "object"
+    },
+    "PageMobileSet": {
+      "additionalProperties": false,
+      "properties": {
+        "mobile": {
+          "$ref": "#/$defs/MobileProjection"
+        },
+        "op": {
+          "const": "page.mobile.set",
+          "default": "page.mobile.set",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "mobile"
+      ],
+      "title": "PageMobileSet",
       "type": "object"
     },
     "PageOrder": {
@@ -3939,6 +6024,94 @@ const schema = {
         "title"
       ],
       "title": "PageRename",
+      "type": "object"
+    },
+    "PageTabOrderSet": {
+      "additionalProperties": false,
+      "properties": {
+        "element_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 150,
+          "title": "Element Ids",
+          "type": "array"
+        },
+        "op": {
+          "const": "page.tab_order.set",
+          "default": "page.tab_order.set",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "element_ids"
+      ],
+      "title": "PageTabOrderSet",
+      "type": "object"
+    },
+    "PageV2": {
+      "additionalProperties": false,
+      "properties": {
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "widgets": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "chart": "#/$defs/ChartWidget",
+                "filter": "#/$defs/FilterWidget",
+                "image": "#/$defs/ImageWidget",
+                "spacer": "#/$defs/SpacerWidget",
+                "text": "#/$defs/TextWidget"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ChartWidget"
+              },
+              {
+                "$ref": "#/$defs/TextWidget"
+              },
+              {
+                "$ref": "#/$defs/ImageWidget"
+              },
+              {
+                "$ref": "#/$defs/FilterWidget"
+              },
+              {
+                "$ref": "#/$defs/SpacerWidget"
+              }
+            ]
+          },
+          "maxItems": 100,
+          "title": "Widgets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_id",
+        "title"
+      ],
+      "title": "PageV2",
       "type": "object"
     },
     "Parameter": {
@@ -4308,6 +6481,35 @@ const schema = {
         "layout"
       ],
       "title": "Placement",
+      "type": "object"
+    },
+    "PointEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "point",
+          "default": "point",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "maximum": 4160,
+          "minimum": -64,
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 750064,
+          "minimum": -64,
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "PointEndpoint",
       "type": "object"
     },
     "Predicate": {
@@ -5016,6 +7218,36 @@ const schema = {
       "title": "RevisionSummary",
       "type": "object"
     },
+    "RichText": {
+      "additionalProperties": false,
+      "properties": {
+        "runs": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "text": "#/$defs/TextRun",
+                "value": "#/$defs/ValueRun"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TextRun"
+              },
+              {
+                "$ref": "#/$defs/ValueRun"
+              }
+            ]
+          },
+          "maxItems": 256,
+          "title": "Runs",
+          "type": "array"
+        }
+      },
+      "title": "RichText",
+      "type": "object"
+    },
     "ScatterEncoding": {
       "additionalProperties": false,
       "properties": {
@@ -5373,6 +7605,67 @@ const schema = {
       "title": "SemanticSource",
       "type": "object"
     },
+    "ShapeElement": {
+      "additionalProperties": false,
+      "properties": {
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "shape",
+          "default": "shape",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "shape": {
+          "default": "rect",
+          "enum": [
+            "rect",
+            "ellipse",
+            "line",
+            "pill",
+            "triangle"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry"
+      ],
+      "title": "ShapeElement",
+      "type": "object"
+    },
     "SingleMeasureEncoding": {
       "additionalProperties": false,
       "properties": {
@@ -5415,6 +7708,57 @@ const schema = {
         "measure"
       ],
       "title": "SingleMeasureEncoding",
+      "type": "object"
+    },
+    "SolidFill": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "solid",
+          "default": "solid",
+          "title": "Kind",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 100,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "integer"
+        },
+        "token": {
+          "enum": [
+            "background",
+            "card",
+            "muted",
+            "accent",
+            "brand",
+            "primary",
+            "foreground",
+            "muted-foreground",
+            "border",
+            "surface-border",
+            "success",
+            "warning",
+            "destructive",
+            "chart-1",
+            "chart-2",
+            "chart-3",
+            "chart-4",
+            "chart-5",
+            "chart-6",
+            "chart-7",
+            "chart-8",
+            "chart-9"
+          ],
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "SolidFill",
       "type": "object"
     },
     "SpacerWidget": {
@@ -5724,6 +8068,21 @@ const schema = {
       "title": "SqlSource",
       "type": "object"
     },
+    "StackAbove": {
+      "additionalProperties": false,
+      "properties": {
+        "above": {
+          "format": "uuid",
+          "title": "Above",
+          "type": "string"
+        }
+      },
+      "required": [
+        "above"
+      ],
+      "title": "StackAbove",
+      "type": "object"
+    },
     "StringValue": {
       "additionalProperties": false,
       "properties": {
@@ -5743,6 +8102,66 @@ const schema = {
         "value"
       ],
       "title": "StringValue",
+      "type": "object"
+    },
+    "Stroke": {
+      "additionalProperties": false,
+      "properties": {
+        "dash": {
+          "default": "solid",
+          "enum": [
+            "solid",
+            "dash",
+            "dot"
+          ],
+          "title": "Dash",
+          "type": "string"
+        },
+        "token": {
+          "enum": [
+            "background",
+            "card",
+            "muted",
+            "accent",
+            "brand",
+            "primary",
+            "foreground",
+            "muted-foreground",
+            "border",
+            "surface-border",
+            "success",
+            "warning",
+            "destructive",
+            "chart-1",
+            "chart-2",
+            "chart-3",
+            "chart-4",
+            "chart-5",
+            "chart-6",
+            "chart-7",
+            "chart-8",
+            "chart-9"
+          ],
+          "title": "Token",
+          "type": "string"
+        },
+        "width": {
+          "default": 1,
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "Stroke",
       "type": "object"
     },
     "TableCalculation": {
@@ -5896,6 +8315,113 @@ const schema = {
         }
       },
       "title": "TableEncoding",
+      "type": "object"
+    },
+    "TextElement": {
+      "additionalProperties": false,
+      "properties": {
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "default": "body",
+          "enum": [
+            "title",
+            "heading",
+            "body",
+            "caption"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        },
+        "text": {
+          "$ref": "#/$defs/RichText"
+        },
+        "title": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry"
+      ],
+      "title": "TextElement",
+      "type": "object"
+    },
+    "TextRun": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 8000,
+          "title": "Text",
+          "type": "string"
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "enum": [
+                400,
+                500,
+                600
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weight"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TextRun",
       "type": "object"
     },
     "TextWidget": {
@@ -6054,6 +8580,159 @@ const schema = {
         "measure"
       ],
       "title": "TopN",
+      "type": "object"
+    },
+    "ValueBinding": {
+      "additionalProperties": false,
+      "description": "A number in text, evaluated as the viewer; never a literal copied from a query.",
+      "properties": {
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "format": {
+          "default": "number",
+          "enum": [
+            "number",
+            "currency",
+            "percent"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "match": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DatumMatch"
+          },
+          "maxItems": 8,
+          "title": "Match",
+          "type": "array"
+        },
+        "measure_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Measure Id",
+          "type": "string"
+        },
+        "rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "max",
+                "min",
+                "first",
+                "last",
+                "total"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule"
+        }
+      },
+      "required": [
+        "element_id",
+        "measure_id"
+      ],
+      "title": "ValueBinding",
+      "type": "object"
+    },
+    "ValueRun": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "value",
+          "default": "value",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/ValueBinding"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "ValueRun",
+      "type": "object"
+    },
+    "VisualElement": {
+      "additionalProperties": false,
+      "properties": {
+        "chart_ref": {
+          "$ref": "#/$defs/ChartReference"
+        },
+        "decorative": {
+          "default": false,
+          "title": "Decorative",
+          "type": "boolean"
+        },
+        "element_id": {
+          "format": "uuid",
+          "title": "Element Id",
+          "type": "string"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilterTree"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "visual",
+          "default": "visual",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "overrides": {
+          "$ref": "#/$defs/ChartOverrides"
+        },
+        "style": {
+          "$ref": "#/$defs/ElementStyle"
+        },
+        "title": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_id",
+        "geometry",
+        "chart_ref"
+      ],
+      "title": "VisualElement",
       "type": "object"
     },
     "WidgetAdd": {
@@ -6227,7 +8906,7 @@ const schema = {
       "$ref": "#/$defs/ChartCreate"
     },
     "contract_version": {
-      "default": 2,
+      "default": 3,
       "title": "Contract Version",
       "type": "integer"
     },

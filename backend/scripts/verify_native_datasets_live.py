@@ -55,7 +55,7 @@ async def verify_dashboard_registration(
                     read.json()["revision"] == 2
                     and read.json()["definition"]["datasets"] == [
                         {"dataset_id": dataset_id, "revision": 1},
-                    ] and read.json()["definition"]["pages"][0]["widgets"] == [])
+                    ] and read.json()["definition"]["pages"][0]["elements"] == [])
         key = str(uuid4())
         await probe.request(
             "dashboard protects registered dataset", "DELETE", f"/api/v1/viz/datasets/{dataset_id}",

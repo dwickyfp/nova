@@ -37,6 +37,7 @@ from .contracts.commands import (
 )
 from .contracts.common import Permission
 from .contracts.dashboards import DashboardDefinition
+from .contracts.dashboards_v2 import DashboardDefinitionV2
 from .contracts.http import (
     ChartCreate,
     DashboardCreate,
@@ -269,7 +270,8 @@ async def replace_chart(
 
 @router.patch("/dashboards/{identity}/draft", response_model=OperationReceipt)
 async def replace_dashboard(
-    identity: UUID, body: DashboardDefinition, user: User, key: Key, revision: Expected
+    identity: UUID, body: DashboardDefinitionV2 | DashboardDefinition, user: User, key: Key,
+    revision: Expected,
 ) -> Any:
     if body.dashboard_id != identity:
         raise NovaException("Document identity cannot be changed", status_code=422)

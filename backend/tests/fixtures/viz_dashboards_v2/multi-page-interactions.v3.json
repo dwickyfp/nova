@@ -1,0 +1,256 @@
+{
+  "actions": [
+    {
+      "action_id": "00000000-0000-4000-8000-000000000025",
+      "kind": "filter",
+      "mappings": [
+        {
+          "source": {
+            "dataset_id": "00000000-0000-4000-8000-000000000384",
+            "dataset_revision": 3,
+            "field_id": "region"
+          },
+          "target": {
+            "dataset_id": "00000000-0000-4000-8000-000000000384",
+            "dataset_revision": 3,
+            "field_id": "region"
+          },
+          "transform": "identity"
+        }
+      ],
+      "run_on": "select",
+      "source_widget_id": "00000000-0000-4000-8000-000000000020",
+      "target_page_id": null,
+      "target_widget_ids": [
+        "00000000-0000-4000-8000-000000000021"
+      ]
+    },
+    {
+      "action_id": "00000000-0000-4000-8000-000000000026",
+      "kind": "navigate",
+      "mappings": [],
+      "run_on": "select",
+      "source_widget_id": "00000000-0000-4000-8000-000000000020",
+      "target_page_id": "00000000-0000-4000-8000-000000000022",
+      "target_widget_ids": []
+    }
+  ],
+  "dashboard_id": "00000000-0000-4000-8000-00000000001e",
+  "datasets": [],
+  "description": "",
+  "filters": [
+    {
+      "allow_all": true,
+      "defaults": [],
+      "depends_on": [],
+      "field": {
+        "dataset_id": "00000000-0000-4000-8000-000000000384",
+        "dataset_revision": 3,
+        "field_id": "region"
+      },
+      "filter_id": "00000000-0000-4000-8000-000000000024",
+      "include_null": false,
+      "kind": "multi_value",
+      "mappings": [],
+      "parameter": null,
+      "relative": null,
+      "scope": {
+        "kind": "widget_subset",
+        "page_id": null,
+        "widget_ids": [
+          "00000000-0000-4000-8000-000000000021",
+          "00000000-0000-4000-8000-000000000023"
+        ]
+      },
+      "searchable": true,
+      "title": "Region"
+    }
+  ],
+  "pages": [
+    {
+      "canvas": {
+        "background": null,
+        "fit": "width",
+        "grid": {
+          "baseline": 8,
+          "columns": 12,
+          "gutter": 12,
+          "margin": 6,
+          "show": true,
+          "snap": true,
+          "snap_to_elements": true
+        },
+        "height": 720,
+        "size": "custom",
+        "width": 1200
+      },
+      "elements": [
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000020",
+          "filters": null,
+          "geometry": {
+            "h": 276,
+            "rotation": 0,
+            "w": 588,
+            "x": 6,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": false,
+          "name": "",
+          "overrides": {
+            "palette": null,
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": null
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        },
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000386",
+            "revision": 1
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000021",
+          "filters": null,
+          "geometry": {
+            "h": 276,
+            "rotation": 0,
+            "w": 588,
+            "x": 606,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": false,
+          "name": "",
+          "overrides": {
+            "palette": null,
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": null
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        }
+      ],
+      "mobile": {
+        "hidden": [],
+        "order": []
+      },
+      "page_id": "00000000-0000-4000-8000-00000000001f",
+      "tab_order": [],
+      "title": "Summary"
+    },
+    {
+      "canvas": {
+        "background": null,
+        "fit": "width",
+        "grid": {
+          "baseline": 8,
+          "columns": 12,
+          "gutter": 12,
+          "margin": 6,
+          "show": true,
+          "snap": true,
+          "snap_to_elements": true
+        },
+        "height": 720,
+        "size": "custom",
+        "width": 1200
+      },
+      "elements": [
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000023",
+          "filters": null,
+          "geometry": {
+            "h": 420,
+            "rotation": 0,
+            "w": 1188,
+            "x": 6,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": false,
+          "name": "",
+          "overrides": {
+            "palette": null,
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": null
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        }
+      ],
+      "mobile": {
+        "hidden": [],
+        "order": []
+      },
+      "page_id": "00000000-0000-4000-8000-000000000022",
+      "tab_order": [],
+      "title": "Detail"
+    }
+  ],
+  "schema_version": 3,
+  "title": "Sales"
+}
