@@ -87,3 +87,42 @@ async def test_a_schedule_that_keeps_failing_says_nothing_was_scheduled(monkeypa
     # Repairs ran out: the turn ends failed, and says so in plain words.
     assert result.finish_reason == (
         "required_capability_incomplete" if attempts == 2 else "error")
+
+
+
+@pytest.mark.asyncio
+async def test_a_refused_first_call_shows_its_reason_and_the_repair_schedules(monkeypatch):
+    """automation-001/002/004: the first call failed with "The step could not be
+    completed", so the agent could not see what to change."""
+    monkeypatch.setattr("app.common.audit.write_audit_log", AsyncMock(return_value="q"))
+    create = AsyncMock(return_value={
+        "automation_id": "a1", "title": ARGS["title"], "timezone": "Asia/Jakarta",
+        "next_run_at": datetime(2026, 11, 25, 0, 0, tzinfo=UTC),
+    })
+    monkeypatch.setattr(automation_repository, "create", create)
+    registry = ToolRegistry()
+    registry.register(schedule_automation_tool)
+    provider = ScriptedProvider([
+        tool_call_frame("s1", name="schedule_automation", arguments={**ARGS, "title": ""}),
+        tool_call_frame("s2", name="schedule_automation", arguments=dict(ARGS)),
+        text_frame("Ringkasan dijadwalkan setiap hari pukul 07.00 (Asia/Jakarta); "
+                   "jadwal berikutnya 2026-11-25 07:00."),
+    ], turn_plan={"intent": "ui_operation", "tools": ["schedule_automation"],
+                  "required_tools": ["schedule_automation"], "ml_task": None})
+    frames = [
+        frame async for frame in AssistantLoop(
+            provider=provider, registry=registry, system_prompt="eval", approval_gate=False,
+        ).run(
+            thread=AssistantThread(thread_id="auto-2", user_name="owner", title="Eval"),
+            user_content="Kirimkan ringkasan pendapatan harian setiap pagi jam 7.",
+            context=_context(), resolve_consent=lambda *_: None,
+        )
+    ]
+    result = TurnResult(frames=frames)
+    failed = [frame for frame in frames
+              if frame.startswith("event: tool_status") and '"failed"' in frame]
+    assert len(failed) == 1
+    assert "title: String should have at least 1 character." in failed[0]
+    assert "could not be completed" not in failed[0]
+    assert create.await_count == 1
+    assert result.finish_reason == "stop"

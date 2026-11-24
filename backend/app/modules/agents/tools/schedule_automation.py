@@ -8,12 +8,15 @@ then runs read-only as its owner (see ``automations``).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pydantic import ValidationError
 
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
+
+logger = logging.getLogger(__name__)
 
 PARAMETERS: dict[str, Any] = {
     "type": "object",
@@ -67,6 +70,13 @@ class ScheduleAutomationTool:
         )
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
+        from app.core.metadata_db import (
+            MetadataConflict,
+            MetadataOutcomeUnknown,
+            MetadataPermissionDenied,
+            MetadataReadOnlyMaintenance,
+            MetadataUnavailable,
+        )
         from app.modules.agents.automations import (
             AutomationCreate,
             AutomationError,
@@ -83,16 +93,28 @@ class ScheduleAutomationTool:
             )
         try:
             body = AutomationCreate(**(invocation.arguments or {}))
+        except ValidationError as exc:
+            return _refused(validation_message(exc), "INVALID_TOOL_ARGUMENTS")
+        try:
             created = await automation_repository.create(
                 agent_id=agent_id, owner_name=owner,
                 role_name=str(getattr(context, "role", None) or user.get("active_role") or ""),
                 body=body,
             )
-        except (ValidationError, AutomationError) as exc:
-            return ToolOutcome(
-                ok=False, summary="", error=str(exc)[:300], error_class="INVALID_TOOL_ARGUMENTS",
-                recoverable=True, safe_detail=str(exc)[:300],
-            )
+        except AutomationError as exc:
+            return _refused(*_classified(exc))
+        except MetadataPermissionDenied:
+            return _refused("Your active role cannot schedule automations for this agent.",
+                            "PERMISSION_DENIED", recoverable=False)
+        except MetadataOutcomeUnknown:
+            # The write may have committed: asking again could schedule it twice.
+            return _refused(
+                "Nova could not confirm whether the automation was saved. Check the "
+                "agent's automations before scheduling it again.", "OUTCOME_UNKNOWN",
+                recoverable=False)
+        except (MetadataUnavailable, MetadataReadOnlyMaintenance, MetadataConflict):
+            return _refused("Automations cannot be saved right now. Try again shortly.",
+                            "TEMPORARILY_UNAVAILABLE", recoverable=False)
         timezone = str(created.get("timezone") or body.timezone)
         next_utc, next_local = _next_run_times(created.get("next_run_at"), timezone)
         return ToolOutcome(
@@ -108,6 +130,50 @@ class ScheduleAutomationTool:
                   "timezone": timezone},
             metadata={"evidence_kind": "action"},
         )
+
+
+def validation_message(exc: ValidationError) -> str:
+    """The arguments a call got wrong, as ``field: problem`` lines.
+
+    Pydantic's own text links to its documentation site; a reason that holds a
+    link is shown to the user as a generic failure, and the agent cannot see
+    what to fix. This names each field and what is wrong with it.
+    """
+    parts = []
+    for error in exc.errors(include_url=False)[:4]:
+        field = ".".join(str(part) for part in error.get("loc") or ()) or "arguments"
+        message = str(error.get("msg") or "is invalid").rstrip(".")
+        parts.append(f"{field}: {message}")
+    return "; ".join(parts) + "."
+
+
+def _classified(exc: Exception) -> tuple[str, str, bool]:
+    """An automation store refusal as (message, error_class, recoverable)."""
+    from app.modules.agents.automations import (
+        MAX_AUTOMATIONS_PER_AGENT,
+        AutomationConflict,
+    )
+
+    text = " ".join(str(exc).split())[:300]
+    if isinstance(exc, AutomationConflict):
+        return text, "CONFLICT", False
+    if text.startswith(f"An agent has at most {MAX_AUTOMATIONS_PER_AGENT}"):
+        return (f"{text} Remove an automation this agent no longer needs first.",
+                "LIMIT_REACHED", False)
+    if ("cron" in text or "interval" in text or "timezone" in text
+            or "schedule" in text.casefold() or "Automations run at most" in text):
+        return text, "INVALID_SCHEDULE", True
+    return text, "INVALID_TOOL_ARGUMENTS", True
+
+
+def _refused(message: str, error_class: str, recoverable: bool = True) -> ToolOutcome:
+    # The reason, without arguments or identities, so a failed first attempt
+    # can be traced to its cause in the server log.
+    logger.info("schedule_automation refused: class=%s reason=%s", error_class, message[:300])
+    return ToolOutcome(
+        ok=False, summary="", error=message, error_class=error_class,
+        recoverable=recoverable, safe_detail=message,
+    )
 
 
 def _next_run_times(value: Any, timezone: str) -> tuple[str, str]:
