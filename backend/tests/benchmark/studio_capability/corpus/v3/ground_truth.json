@@ -1,5 +1,5 @@
 {
- "corpus_version": "2026-11-25.3",
+ "corpus_version": "2026-11-25.4",
  "data_facts": {
   "columns": [
    "first_order",
@@ -10150,5 +10150,5 @@
    }
   }
  },
- "semantic_model": "demo_sales@v1/0.1.1"
+ "semantic_model": "demo_sales@v2/0.1.1"
 }

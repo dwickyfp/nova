@@ -135,9 +135,11 @@ def test_session_bind_uses_the_earlier_reference_not_a_constant() -> None:
     assert city != "Jakarta"
 
 
-def test_alternative_reading_is_pending_until_computed() -> None:
+def test_new_primary_reading_is_pending_until_computed() -> None:
+    # typo-006: distinct customers became primary (demo_sales v2); orders stay accepted
     refs = resolve(UNITS["typo-006"], GT, UNITS)
-    assert refs.numeric[0] is not None and refs.numeric[1] is None
+    assert refs.numeric[0] is None and refs.numeric[1] is not None
+    assert UNITS["typo-006"].numeric.semantic_measures == ["customer_count"]
 
 
 # ── fold and the UI tree ───────────────────────────────────────────────
@@ -279,7 +281,17 @@ def test_decisions_are_in_the_corpus() -> None:
     assert "refusal_alternative" in UNITS["governance-010"].owner_rules  # D2
     assert "table" in UNITS["session-006.t3"].ui.kinds               # D5
     assert UNITS["kpi-008"].numeric.required_measures == ["revenue", "orders"]  # E1
-    assert UNITS["number-026"].deferred                              # rule 3, waits for S1
+    assert not UNITS["number-026"].deferred      # demo_sales v2 has customer_count
+
+
+def test_units_needing_a_missing_measure_are_deferred() -> None:
+    from tests.benchmark.studio_capability.v2.convert import convert
+
+    units, log = convert({"revenue", "order_count", "average_order_value"})
+    deferred = {u.id for u in units if u.deferred}
+    assert {"number-026", "multi_step-006", "typo-006"} <= deferred
+    assert "deferred until the semantic model" in log[-1]
+    assert not {u.id for u in convert(corpus_v3.semantic_names())[0] if u.deferred}
 
 
 # ── product outcome, claims and adapters ───────────────────────────────
@@ -477,6 +489,8 @@ def test_runner_is_blocked_by_the_linter(monkeypatch: pytest.MonkeyPatch) -> Non
     with pytest.raises(SystemExit):
         run.corpus_gate([{"id": "number-001"}])
     monkeypatch.setattr(corpus_v3, "lint", lambda **_: corpus_v3.LintReport())
+    waiting = UNITS["number-026"].model_copy(update={"deferred": "no customer_count"})
+    monkeypatch.setattr(corpus_v3, "load_units", lambda *_a, **_k: [UNITS["number-001"], waiting])
     assert [u["id"] for u in run.corpus_gate([{"id": "number-001"}, {"id": "number-026"}])] == [
         "number-001"]
 

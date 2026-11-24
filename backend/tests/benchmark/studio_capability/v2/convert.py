@@ -30,7 +30,7 @@ from tests.benchmark.studio_capability import corpus as corpus_v1
 from tests.benchmark.studio_capability.v2 import corpus_v3
 from tests.benchmark.studio_capability.v2.expectation import Expectation
 
-V3_VERSION = "2026-11-25.3"
+V3_VERSION = "2026-11-25.4"
 SOFT_UI = {"text", "suggestions", "number"}
 CITY_AVG_SQL = ("SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders "
                 "GROUP BY shipping_city ORDER BY value DESC")
@@ -62,9 +62,9 @@ CHANGES: list[Change] = [
     (("what_if-006",), {"numeric": None, "ui_kinds": ["interactive"],
                         "bindings": ["control_live"]},
      "E1: the old figure was July's actual revenue, not a target; grade the live control."),
-    (("typo-006",), {"alternatives": [GOPAY_CUSTOMERS_SQL], "alternative_measures": [["value"]],
-                     "semantic_measures_alt": ["customer_count"]},
-     "E1: 'brp org' reads as orders or as distinct customers; both readings are accepted."),
+    (("typo-006",), {"primary_with_alternative": GOPAY_CUSTOMERS_SQL},
+     "E1 (coordinator, 2026-11-24): 'brp org' means people, so distinct GoPay customers is "
+     "the primary reference; the order count stays an accepted alternative reading."),
     (("deep_research-001", "deep_research-002", "deep_research-003"),
      {"numeric": None, "judge_focus": ["names the drivers (payment method, city) from the data",
                                        "uses the data's own date range"]},
@@ -185,8 +185,14 @@ def apply(drafted: dict[str, Any], change: dict[str, Any]) -> None:
                 drafted["numeric"][key] = value
                 if key == "reference_sql":
                     drafted["numeric"]["semantic_measures"] = semantic_measures(value)
-        elif key == "semantic_measures_alt":
-            continue  # alternatives are not required to exist in the model
+        elif key == "primary_with_alternative":
+            numeric = drafted["numeric"]
+            if numeric is not None:  # the old primary becomes the accepted alternative
+                numeric["alternatives"] = [numeric["reference_sql"]]
+                numeric["alternative_measures"] = [numeric["required_measures"]]
+                numeric["reference_sql"] = value
+                numeric["required_measures"] = ["value"]
+                numeric["semantic_measures"] = semantic_measures(value)
         elif key == "numeric":
             drafted["numeric"] = value
         elif key == "bindings":
@@ -209,7 +215,9 @@ def typed(drafted: dict[str, Any]) -> Expectation:
     return Expectation.model_validate(payload)
 
 
-def convert() -> tuple[list[Expectation], list[str]]:
+def convert(metrics: set[str] | None = None) -> tuple[list[Expectation], list[str]]:
+    """``metrics``: the semantic model's measures; units needing a missing one are deferred."""
+    metrics = corpus_v3.semantic_names() if metrics is None else metrics
     gt_items = corpus_v1.ground_truth().get("items") or {}
     drafts = {u["id"]: draft(u, gt_items) for u in corpus_v1.units()}
     log: list[str] = []
@@ -221,12 +229,13 @@ def convert() -> tuple[list[Expectation], list[str]]:
     deferred = []
     for drafted in drafts.values():
         numeric = drafted.get("numeric")
-        if numeric and "customer_count" in numeric.get("semantic_measures", []):
-            drafted["deferred"] = "PR-5 (S1): the semantic model has no customer_count"
+        missing = [m for m in (numeric or {}).get("semantic_measures", []) if m not in metrics]
+        if missing:
+            drafted["deferred"] = f"the semantic model has no {', '.join(missing)}"
             deferred.append(drafted["id"])
     if deferred:
-        log.append(f"- {', '.join(deferred)}: deferred until the semantic model has "
-                   "customer_count (FIX-PLAN PR-5, S1); linter rule 3.")
+        log.append(f"- {', '.join(deferred)}: deferred until the semantic model has the "
+                   "measures they need; linter rule 3.")
     return [typed(d) for d in drafts.values()], log
 
 
@@ -249,15 +258,15 @@ def main() -> None:
     parser.add_argument("--semantic-view", type=Path,
                         help="the demo_sales semantic view as the API returns it")
     args = parser.parse_args()
-    units, log = convert()
+    semantic = trim_semantic_view(args.semantic_view) if args.semantic_view else None
+    units, log = convert(set(semantic["metrics"]) if semantic else None)
     directory = corpus_v3.V3_DIR
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / corpus_v3.UNITS).open("w") as handle:
         for unit in units:
             handle.write(unit.model_dump_json(exclude_defaults=True) + "\n")
     if args.semantic_view:
-        (directory / corpus_v3.SEMANTIC_MODEL).write_text(
-            json.dumps(trim_semantic_view(args.semantic_view), indent=1) + "\n")
+        (directory / corpus_v3.SEMANTIC_MODEL).write_text(json.dumps(semantic, indent=1) + "\n")
     changelog = directory / "CHANGELOG.md"
     header = (f"# Corpus v3 changelog\n\n## {V3_VERSION}: converted from corpus v2 "
               "(2026-11-24.2)\n\nMechanical: every v2 unit becomes a typed expectation "
