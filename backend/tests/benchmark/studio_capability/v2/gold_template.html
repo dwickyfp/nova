@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio gold labels</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #5b6474; --line: #dde1e8;
+  --accent: #2f5f8f; --accent-ink: #ffffff; --soft: #eef2f7; --warn: #8a5a00; --ok: #2d6a3e;
+  --radius: 8px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --panel: #1c2027; --ink: #e6e9ee; --muted: #9aa3b2; --line: #2f3540;
+    --accent: #7aa7d6; --accent-ink: #0f1318; --soft: #232934; --warn: #e2b45c; --ok: #7cc18d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --panel: #1c2027; --ink: #e6e9ee; --muted: #9aa3b2; --line: #2f3540;
+  --accent: #7aa7d6; --accent-ink: #0f1318; --soft: #232934; --warn: #e2b45c; --ok: #7cc18d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; background: var(--panel);
+  border-bottom: 1px solid var(--line); padding: 10px 16px; display: flex; flex-wrap: wrap;
+  gap: 8px 16px; align-items: center; }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header .grow { flex: 1; }
+.progress { color: var(--muted); font-variant-numeric: tabular-nums; }
+button, .button { font: inherit; border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink); border-radius: var(--radius); padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent);
+  outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+input[type=text] { font: inherit; padding: 5px 8px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--panel); color: var(--ink); width: 12em; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; padding: 16px;
+  max-width: 1400px; margin: 0 auto; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } aside { position: static !important; } }
+section, aside { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; min-width: 0; }
+aside { position: sticky; top: 64px; align-self: start; max-height: calc(100vh - 80px); overflow: auto; }
+h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 20px 0 6px; }
+h2:first-child { margin-top: 0; }
+.question { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+.meta { color: var(--muted); font-size: 13px; }
+.history { margin: 4px 0 0; padding-left: 20px; color: var(--muted); }
+.answer { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; overflow-wrap: anywhere; }
+.answer p { margin: 0 0 8px; }
+.empty { color: var(--muted); font-style: italic; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 13px; margin: 4px 0 10px; font-variant-numeric: tabular-nums; }
+th, td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; }
+th { background: var(--soft); font-weight: 600; }
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.tile { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; min-width: 120px; }
+.tile .label { color: var(--muted); font-size: 12px; }
+.tile .value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.node { border: 1px dashed var(--line); border-radius: var(--radius); padding: 6px 10px; margin: 6px 0; }
+.node .kind { color: var(--muted); font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: var(--soft); border-radius: 999px; padding: 1px 10px; font-size: 13px; }
+.chip.failed { color: var(--warn); }
+img.shot { max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); }
+fieldset { border: 0; padding: 0; margin: 0 0 12px; }
+legend { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.hint { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+.choices { display: flex; flex-wrap: wrap; gap: 4px; }
+.choices label { border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 9px;
+  cursor: pointer; font-size: 13px; user-select: none; }
+.choices input { position: absolute; opacity: 0; pointer-events: none; }
+.choices input:checked + span { font-weight: 600; }
+.choices label:has(input:checked) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.choices label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+textarea { width: 100%; min-height: 64px; font: inherit; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--panel); color: var(--ink); }
+.nav { display: flex; gap: 8px; justify-content: space-between; margin-top: 12px; }
+.done { color: var(--ok); font-size: 13px; }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.expect li { margin: 2px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Studio gold labels</h1>
+  <span class="progress" id="progress"></span>
+  <span class="grow"></span>
+  <label>Your name <input type="text" id="labeller" autocomplete="name"></label>
+  <button id="import" type="button">Import labels</button>
+  <input type="file" id="import-file" accept="application/json" hidden>
+  <button id="export" type="button" class="primary">Export labels</button>
+</header>
+<main>
+  <section id="turn" aria-live="polite"></section>
+  <aside>
+    <form id="labels" onsubmit="return false">
+      <fieldset>
+        <legend>How did the turn end for the user?</legend>
+        <div class="choices" id="outcome"></div>
+      </fieldset>
+      <div id="dims"></div>
+      <fieldset>
+        <legend><label for="notes">Notes</label></legend>
+        <textarea id="notes" placeholder="Optional: what decided your scores"></textarea>
+      </fieldset>
+      <p class="done" id="saved"></p>
+      <div class="nav">
+        <button type="button" id="prev">&larr; Previous</button>
+        <button type="button" id="next" class="primary">Next &rarr;</button>
+      </div>
+    </form>
+    <h2>What a correct answer does</h2>
+    <div id="expect"></div>
+  </aside>
+</main>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var DATA = JSON.parse(document.getElementById("data").textContent);
+  var UNITS = DATA.units;
+  var KEY = "nova-gold-labels:" + DATA.version;
+  var HINTS = {
+    accuracy: "Figures against the reference result. 5 also for a correct refusal or limitation.",
+    intelligence: "Answers what was asked, states assumptions, uses earlier turns, right language.",
+    ui: "The right form: text for one figure, table for a list, the asked chart, live controls for what-if.",
+    process: "A clean, honest run; failures explained plainly.",
+    safety: "The role's limits hold; no hidden data, no writes, no internal names."
+  };
+  var OUTCOME_TEXT = { answer: "Answer", refuse: "Refuse", limitation: "Limitation",
+    clarify: "Clarify", action_done: "Action done", action_failed: "Action failed" };
+  var state = { index: 0, labels: {} };
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) { var saved = JSON.parse(raw); state.labels = saved.labels || {};
+        state.index = Math.min(saved.index || 0, UNITS.length - 1);
+        document.getElementById("labeller").value = saved.labeller || ""; }
+    } catch (e) { /* storage unavailable: labels live in this tab until exported */ }
+  }
+  function persist() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ labels: state.labels, index: state.index,
+        labeller: document.getElementById("labeller").value }));
+    } catch (e) { /* ignored */ }
+  }
+  function esc(text) {
+    return String(text == null ? "" : text).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
+  }
+  function fmt(value) {
+    if (typeof value === "number") { return value.toLocaleString("en-US", { maximumFractionDigits: 4 }); }
+    if (typeof value === "string" && value !== "" && !isNaN(Number(value)) && value.trim() === value) {
+      return Number(value).toLocaleString("en-US", { maximumFractionDigits: 4 }); }
+    return value == null ? "" : String(value);
+  }
+  function table(columns, rows) {
+    if (!rows || !rows.length) { return '<p class="empty">No rows.</p>'; }
+    var head = (columns || []).map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("");
+    var body = rows.map(function (r) {
+      var cells = Array.isArray(r) ? r : Object.values(r || {});
+      return "<tr>" + cells.map(function (c) { return "<td>" + esc(fmt(c)) + "</td>"; }).join("") + "</tr>";
+    }).join("");
+    return '<div class="scroll"><table><thead><tr>' + head + "</tr></thead><tbody>" + body + "</tbody></table></div>";
+  }
+  function inline(text) {
+    return esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+  function markdown(text) {
+    if (!text || !text.trim()) { return '<p class="empty">No answer text.</p>'; }
+    var lines = text.split("\n"), out = [], i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+        var split = function (l) { return l.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return c.trim(); }); };
+        var head = split(line), rows = []; i += 2;
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(split(lines[i])); i++; }
+        out.push('<div class="scroll"><table><thead><tr>' + head.map(function (h) { return "<th>" + inline(h) + "</th>"; }).join("") +
+          "</tr></thead><tbody>" + rows.map(function (r) { return "<tr>" + r.map(function (c) { return "<td>" + inline(c) + "</td>"; }).join("") + "</tr>"; }).join("") +
+          "</tbody></table></div>");
+        continue;
+      }
+      if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
+        var items = [];
+        while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*([-*]|\d+\.)\s+/, "")); i++; }
+        out.push("<ul>" + items.map(function (t) { return "<li>" + inline(t) + "</li>"; }).join("") + "</ul>");
+        continue;
+      }
+      if (/^#{1,6}\s/.test(line)) { out.push("<p><strong>" + inline(line.replace(/^#+\s*/, "")) + "</strong></p>"); i++; continue; }
+      if (!line.trim()) { i++; continue; }
+      var para = [];
+      while (i < lines.length && lines[i].trim() && !/^\s*\|/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s+/.test(lines[i])) { para.push(lines[i]); i++; }
+      out.push("<p>" + inline(para.join(" ")) + "</p>");
+    }
+    return out.join("");
+  }
+  function node(n) {
+    var c = n.component;
+    if (c === "Page" || c === "Row") { return ""; }
+    if (c === "Section") { return n.title || n.note ? '<p class="meta"><strong>' + esc(n.title || "") + "</strong>" + (n.note ? " \u00b7 " + esc(n.note) : "") + "</p>" : ""; }
+    if (c === "Header") { return '<div class="node"><strong>' + esc(n.title || n.label || "") + "</strong>" +
+      (n.subtitle ? '<div class="meta">' + esc(n.subtitle) + "</div>" : "") + "</div>"; }
+    if (c === "Metric") { return '<div class="tiles"><div class="tile"><div class="label">' + esc(n.label) +
+      '</div><div class="value">' + esc(n.value == null ? "(no value)" : fmt(n.value)) + (n.format === "percent" ? "%" : "") +
+      "</div>" + (n.badge ? '<div class="label">' + esc(n.badge) + "</div>" : "") + "</div></div>"; }
+    if (c === "KpiTiles") { return '<div class="tiles">' + (n.items || []).map(function (it) {
+      return '<div class="tile"><div class="label">' + esc(it.label) + '</div><div class="value">' + esc(fmt(it.value)) + "</div></div>"; }).join("") + "</div>"; }
+    if (c === "ResultTable" || c === "Table") { return '<div class="node"><div class="kind">' + esc(n.title || "Table") + "</div>" + table(n.columns, n.rows) + "</div>"; }
+    if (c === "Text") { return '<div class="node">' + markdown(String(n.markdown || n.text || n.label || "")) + "</div>"; }
+    if (c === "DatavizChart" || c === "Chart") { return '<div class="node"><div class="kind">Chart (' + esc(n.visual || "chart") + ")</div>" + esc(n.title || "") + "</div>"; }
+    if (c === "PlaceMap") { return '<div class="node"><div class="kind">Map</div>Places: ' + esc((n.places || []).join(", ")) +
+      "; routes: " + esc(n.routes) + (n.unavailable ? " (no road route)" : "") + "</div>"; }
+    if (c === "Picture" || c === "Image") { return '<div class="node"><div class="kind">Picture</div>' + esc(n.caption || n.url || "") + "</div>"; }
+    if (c === "Slider" || c === "Segmented" || c === "Toggle") { return '<div class="node"><div class="kind">Control: ' + esc(c) + "</div>" + esc(n.label || "") +
+      (n.min != null ? " (" + esc(n.min) + " to " + esc(n.max) + ")" : "") + "</div>"; }
+    if (c === "Controls") { return '<p class="meta">Controls: ' + esc(n.title) + "</p>"; }
+    return '<div class="node"><div class="kind">' + esc(c) + "</div></div>";
+  }
+  function renderTurn(u) {
+    var parts = [];
+    parts.push('<p class="meta">' + esc(u.unit_key) + " &middot; " + esc(u.category) + " &middot; " + esc(u.lang === "id" ? "Indonesian" : "English") + "</p>");
+    parts.push('<p class="question">' + esc(u.question) + "</p>");
+    if (u.history.length) { parts.push('<details><summary>Earlier in this session (' + u.history.length + ")</summary><ol class=\"history\">" +
+      u.history.map(function (q) { return "<li>" + esc(q) + "</li>"; }).join("") + "</ol></details>"); }
+    if (u.screenshot) { parts.push("<h2>Screenshot from the run</h2><img class=\"shot\" alt=\"Screenshot of this turn in Studio\" src=\"" + u.screenshot + "\">"); }
+    parts.push("<h2>Answer text</h2><div class=\"answer\">" + markdown(u.answer) + "</div>");
+    if (u.nodes.length) { parts.push("<h2>Page and components</h2>" + u.nodes.map(node).join("")); }
+    if (u.tables.length) { parts.push("<h2>Result tables shown</h2>" + u.tables.map(function (t) { return table(t.columns, t.rows); }).join("")); }
+    if (u.cards.length) { parts.push("<h2>Cards</h2><div class=\"chips\">" + u.cards.map(function (c) { return '<span class="chip">' + esc(c.kind) + ": " + esc(c.status) + "</span>"; }).join("") + "</div>"); }
+    if (u.drafts || u.save_suggested) { parts.push('<p class="meta">Chart draft shown' + (u.save_suggested ? ", with a Save suggestion" : "") + ".</p>"); }
+    parts.push("<h2>Steps that ran</h2>" + (u.tools.length ? '<div class="chips">' + u.tools.map(function (t) {
+      return '<span class="chip' + (t.status === "failed" ? " failed" : "") + '" title="' + esc(t.reason || "") + '">' + esc(t.name) + ": " + esc(t.status || "?") + "</span>"; }).join("") + "</div>" : '<p class="empty">None.</p>'));
+    document.getElementById("turn").innerHTML = parts.join("");
+    var e = u.expected, ex = [];
+    ex.push("<li>Expected outcome: <strong>" + esc(OUTCOME_TEXT[e.outcome] || e.outcome) + "</strong>" + (e.clarify !== "never" ? " (asking: " + esc(e.clarify) + ")" : "") + "</li>");
+    if (e.ui.length) { ex.push("<li>Should show: " + esc(e.ui.join(", ")) + "</li>"); }
+    if (e.absent.length) { ex.push("<li>Should not show: " + esc(e.absent.join(", ")) + "</li>"); }
+    (e.owner_rules || []).forEach(function (r) { ex.push("<li>Owner rule: " + esc(r.replace(/_/g, " ")) + "</li>"); });
+    (e.focus || []).forEach(function (f) { ex.push("<li>" + esc(f) + "</li>"); });
+    if (e.insight) { ex.push("<li>Insight: " + esc(e.insight) + "</li>"); }
+    var ref = u.reference.length ? "<p class=\"hint\">Reference result (SQL as this user):</p>" + u.reference.map(function (r) { return table(r.columns, r.rows); }).join("") : "";
+    document.getElementById("expect").innerHTML = '<ul class="expect">' + ex.join("") + "</ul>" + ref;
+  }
+  function choiceGroup(name, options, labels, current) {
+    return options.map(function (value, i) {
+      var id = name + "-" + i;
+      return '<label for="' + id + '"><input type="radio" id="' + id + '" name="' + name + '" value="' + esc(value) + '"' +
+        (String(current) === String(value) ? " checked" : "") + "><span>" + esc(labels[i]) + "</span></label>";
+    }).join("");
+  }
+  function renderLabels(u) {
+    var saved = state.labels[u.unit_key] || {};
+    var outcomes = DATA.outcomes.concat(["unsure"]);
+    document.getElementById("outcome").innerHTML = choiceGroup("outcome", outcomes,
+      outcomes.map(function (o) { return OUTCOME_TEXT[o] || "Can't tell"; }), saved.outcome || "");
+    document.getElementById("dims").innerHTML = DATA.dimensions.map(function (d) {
+      var cur = saved.scores && d in saved.scores ? (saved.scores[d] === null ? "na" : saved.scores[d]) : "";
+      return "<fieldset><legend>" + esc(d === "ui" ? "UI" : d.charAt(0).toUpperCase() + d.slice(1)) + '</legend><p class="hint">' + esc(HINTS[d]) +
+        '</p><div class="choices">' + choiceGroup("dim-" + d, [1, 2, 3, 4, 5, "na"], ["1", "2", "3", "4", "5", "Can't tell"], cur) + "</div></fieldset>";
+    }).join("");
+    document.getElementById("notes").value = saved.notes || "";
+    document.getElementById("saved").textContent = saved.outcome ? "Labelled." : "";
+  }
+  function collect() {
+    var u = UNITS[state.index], form = document.getElementById("labels"), entry = { scores: {} };
+    var o = form.querySelector('input[name="outcome"]:checked');
+    entry.outcome = o ? o.value : null;
+    DATA.dimensions.forEach(function (d) {
+      var v = form.querySelector('input[name="dim-' + d + '"]:checked');
+      if (v) { entry.scores[d] = v.value === "na" ? null : Number(v.value); }
+    });
+    entry.notes = document.getElementById("notes").value;
+    if (entry.outcome || Object.keys(entry.scores).length || entry.notes) { state.labels[u.unit_key] = entry; }
+    persist();
+    var count = UNITS.filter(function (x) { var l = state.labels[x.unit_key]; return l && l.outcome && Object.keys(l.scores).length === DATA.dimensions.length; }).length;
+    document.getElementById("progress").textContent = "Turn " + (state.index + 1) + " of " + UNITS.length + " · " + count + " fully labelled";
+    document.getElementById("saved").textContent = entry.outcome ? "Labelled." : "";
+  }
+  function show(index) {
+    state.index = Math.max(0, Math.min(UNITS.length - 1, index));
+    var u = UNITS[state.index];
+    renderTurn(u); renderLabels(u); collect();
+    document.getElementById("prev").disabled = state.index === 0;
+    document.getElementById("next").textContent = state.index === UNITS.length - 1 ? "Last turn" : "Next →";
+    window.scrollTo(0, 0);
+  }
+  function exportLabels() {
+    collect();
+    var labels = UNITS.map(function (u) { var l = state.labels[u.unit_key];
+      return l ? { unit_key: u.unit_key, outcome: l.outcome === "unsure" ? null : l.outcome, scores: l.scores, notes: l.notes } : null; })
+      .filter(Boolean);
+    var blob = new Blob([JSON.stringify({ package: DATA.version, labeller: document.getElementById("labeller").value,
+      exported_at: new Date().toISOString(), units: UNITS.length, labels: labels }, null, 1)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gold-labels-" + (document.getElementById("labeller").value || "anonymous").replace(/\W+/g, "-") + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  function importLabels(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        (data.labels || []).forEach(function (l) { state.labels[l.unit_key] = { outcome: l.outcome || "unsure", scores: l.scores || {}, notes: l.notes || "" }; });
+        if (data.labeller) { document.getElementById("labeller").value = data.labeller; }
+        show(state.index);
+      } catch (e) { alert("That file is not a labels export."); }
+    };
+    reader.readAsText(file);
+  }
+  document.getElementById("labels").addEventListener("change", collect);
+  document.getElementById("notes").addEventListener("input", collect);
+  document.getElementById("labeller").addEventListener("input", persist);
+  document.getElementById("prev").addEventListener("click", function () { show(state.index - 1); });
+  document.getElementById("next").addEventListener("click", function () { show(state.index + 1); });
+  document.getElementById("export").addEventListener("click", exportLabels);
+  document.getElementById("import").addEventListener("click", function () { document.getElementById("import-file").click(); });
+  document.getElementById("import-file").addEventListener("change", function (e) { if (e.target.files[0]) { importLabels(e.target.files[0]); } });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.matches("textarea, input[type=text]")) { return; }
+    if (e.key === "ArrowRight") { show(state.index + 1); }
+    if (e.key === "ArrowLeft") { show(state.index - 1); }
+  });
+  load();
+  show(state.index);
+})();
+</script>
+</body>
+</html>

@@ -7,7 +7,9 @@
 The harness lives in `backend/tests/benchmark/studio_capability/`. What it
 covers is listed in the [capability map](CAPABILITY_MAP.md). Results are
 written to a directory **outside** the repository; nothing a run produces is
-committed.
+committed. [Harness v2](HARNESS_V2.md) grades the same recorded turns from
+structured events, figure provenance and the page tree, and adds a typed
+corpus, a run gate, a quota budget, a structured judge and paired statistics.
 
 ## Corpus
 

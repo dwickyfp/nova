@@ -32,6 +32,8 @@ from tests.benchmark.studio_capability import corpus, fixtures, settings
 from tests.benchmark.studio_capability.checks import check
 from tests.benchmark.studio_capability.client import StudioClient, TurnResult, with_retry
 from tests.benchmark.studio_capability.journal import Part, TurnView, fold
+from tests.benchmark.studio_capability.v2 import adapters, corpus_v3
+from tests.benchmark.studio_capability.v2.budget import Budget, Estimates
 
 DATA_START, DATA_END = "2025-06-01", "2025-07-05"
 
@@ -105,7 +107,7 @@ def _resolved(unit: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
 class Runner:
     def __init__(self, client: StudioClient, agent: dict[str, Any], out: Path, *,
                  pause: float, max_failures: int, replay: bool,
-                 fixture: dict[str, Any] | None = None):
+                 fixture: dict[str, Any] | None = None, budget: Budget | None = None):
         self.client = client
         self.agent = agent
         self.fixture = fixture
@@ -113,6 +115,7 @@ class Runner:
         self.pause = pause
         self.max_failures = max_failures
         self.replay = replay
+        self.budget = budget
         self.gt = corpus.ground_truth().get("items", {})
         self._last_start = 0.0
         self._pace = asyncio.Lock()
@@ -169,6 +172,9 @@ class Runner:
         record = self._record(_resolved(unit, agent.get("aliases") or {}), result, view, agent)
         if self.replay and result.run_id and not result.transport_error:
             record["replay"] = await self._replay_check(agent_id, thread_id, result.run_id, view)
+        if result.run_id and not result.transport_error:
+            # Harness v2: bound dataset rows (previewed as this user) and Nova's trace steps.
+            await adapters.attach(self.client, record, agent_id)
         return record
 
     async def _replay_check(self, agent_id: str, thread_id: str, run_id: str,
@@ -222,8 +228,10 @@ class Runner:
                             question=unit["question"], transport_error=error,
                             total_s=round(time.monotonic() - started, 3))
         record = self._record(unit, result, view)
+        # Harness v2 reads findings tables and usage when the API returns them.
         record["deep_research"] = {"status": final.get("status"),
-                                   "plan": final.get("plan"), "progress": final.get("progress")}
+                                   "plan": final.get("plan"), "progress": final.get("progress"),
+                                   "findings": final.get("findings"), "usage": final.get("usage")}
         return record
 
     def save(self, record: dict[str, Any]) -> None:
@@ -262,10 +270,24 @@ class Runner:
         else:
             self.failures = 0
 
+    def affordable(self, unit: dict[str, Any]) -> bool:
+        """False (and the run stops cleanly) once the next unit would exceed the budget."""
+        if self.budget is None or self.budget.allows(unit["id"], unit.get("category")):
+            return True
+        print(f"Stopping before {unit['id']}: token budget left {self.budget.remaining}.",
+              flush=True)
+        self.stopped = True
+        return False
+
+    def charge(self, record: dict[str, Any]) -> None:
+        if self.budget is not None:
+            self.budget.spend(record)
+
     async def single(self, unit: dict[str, Any]) -> None:
-        if self.stopped or self.done(unit["id"]):
+        if self.stopped or self.done(unit["id"]) or not self.affordable(unit):
             return
         record = await self.turn(unit, None)
+        self.charge(record)
         await self.guard(record)
         if not record.get("transport_error") and not self.provider_outage(record):
             self.save(record)
@@ -279,12 +301,15 @@ class Runner:
                 return
             if self.done(unit["id"]):
                 continue
+            if not self.affordable(unit):
+                return  # the session resumes from this turn in a later run
             if thread_id is None:
                 thread_id = await with_retry(lambda: self.client.new_thread(
                     self.agent["agent_id"], f"bench {session['id']}"))
                 state = {"thread_id": thread_id, "session_id": session["id"]}
                 state_path.write_text(json.dumps(state))
             record = await self.turn(unit, thread_id)
+            self.charge(record)
             await self.guard(record)
             if self.provider_outage(record):
                 # The failed message stays in that thread's history: start the session
@@ -312,9 +337,26 @@ def select(units: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[s
     return chosen
 
 
+def corpus_gate(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Corpus v3 linter (blocking) and the units it defers until a product change."""
+    report = corpus_v3.lint(for_run=True)
+    if not report.ok:
+        for line in report.errors[:40]:
+            print(f"corpus: {line}")
+        raise SystemExit(f"The corpus linter found {len(report.errors)} problems; the run is "
+                         "blocked (python -m tests.benchmark.studio_capability.v2.corpus_v3).")
+    deferred = {u.id: u.deferred for u in corpus_v3.load_units() if u.deferred}
+    skipped = [u["id"] for u in units if u["id"] in deferred]
+    if skipped:
+        print(f"{len(skipped)} deferred units skipped: {', '.join(skipped)}")
+    return [u for u in units if u["id"] not in deferred]
+
+
 async def main_async(args: argparse.Namespace) -> None:
     out = settings.out_dir(args.out)
     units = select(corpus.units(), args)
+    if not args.dry_run:
+        units = corpus_gate(units)
     if args.dry_run:
         for unit in units:
             print(unit["id"], "|", unit["question"][:90])
@@ -327,7 +369,14 @@ async def main_async(args: argparse.Namespace) -> None:
         agent = await client.agent_by_name(settings.agent_name())
         detail = await client.request("GET", f"agents/{agent['agent_id']}")
         agent = {**agent, "model_name": detail.get("model_name")}
+        budget = None
+        if args.token_budget:
+            budget = Budget(args.token_budget, Estimates.from_runs([*args.history, out]))
         manifest = {"corpus_version": units[0]["corpus_version"] if units else None,
+                    "corpus_v3_version": corpus_v3.load_units()[0].corpus_version,
+                    "ground_truth_fingerprint": corpus_v3.load_ground_truth().get(
+                        "data_fingerprint"),
+                    "token_budget": args.token_budget,
                     "api": settings.api(), "agent": agent.get("name"),
                     "agent_id": agent["agent_id"], "model": agent.get("model_name"),
                     "user": identity.username, "role": client.role,
@@ -341,7 +390,7 @@ async def main_async(args: argparse.Namespace) -> None:
         manifest["fixture_agent"] = (fixture or {}).get("agent_name")
         (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
         runner = Runner(client, agent, out, pause=args.pause, max_failures=args.max_failures,
-                        replay=not args.no_replay, fixture=fixture)
+                        replay=not args.no_replay, fixture=fixture, budget=budget)
         sessions = {s["id"]: s for s in corpus.sessions()}
         jobs: list[Any] = []
         grouped: dict[str, list[dict[str, Any]]] = {}
@@ -361,6 +410,9 @@ async def main_async(args: argparse.Namespace) -> None:
                     await runner.session(*job[1])
 
         await asyncio.gather(*(run(job) for job in jobs))
+        if budget is not None:
+            manifest["budget"] = budget.summary()
+            (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
     finally:
         await client.close()
 
@@ -377,6 +429,10 @@ def main() -> None:
     parser.add_argument("--max-failures", type=int, default=4)
     parser.add_argument("--no-replay", action="store_true", help="skip the reload check")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--token-budget", type=int,
+                        help="stop before a unit whose estimated tokens exceed what is left")
+    parser.add_argument("--history", type=Path, action="append", default=[],
+                        help="recorded runs for per-unit token estimates")
     asyncio.run(main_async(parser.parse_args()))
 
 

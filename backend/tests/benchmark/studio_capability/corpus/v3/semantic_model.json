@@ -1,0 +1,23 @@
+{
+ "name": "demo_sales",
+ "version": "v1/0.1.1",
+ "metrics": [
+  "revenue",
+  "order_count",
+  "average_order_value"
+ ],
+ "dimensions": [
+  "order_id",
+  "customer_id",
+  "order_date",
+  "status",
+  "payment_method",
+  "shipping_city",
+  "total_amount"
+ ],
+ "units": {
+  "revenue": "USD",
+  "order_count": null,
+  "average_order_value": null
+ }
+}
