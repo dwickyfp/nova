@@ -1218,3 +1218,22 @@ by a recorded decision and 3 are blocked.
   - Attempt 2: 1 failed, the keyboard-only editor test. Radix select typeahead picked "Accent" instead of "Brand" because its buffer resets after one second under load. The test now arrows down to Brand and checks focus before Enter.
   - Attempt 3: 1 failed, `dataset-create.test.tsx` (SQL parameters). A click timed out after 113 ms, once the test's time budget ran out. The file and its feature have not changed since #227, and it passes alone twice.
   - Each local attempt failed a different unrelated test on a timeout. The full-suite pass of record is the CI frontend job on the final commit of PR #253.
+
+## Drag frame gate made robust (2026-11-24)
+
+- **Why:** on GitHub runners, the 60-item drag test failed from single slow frames (8.4–11.9 ms) on main, #252 and #253, while medians were 1.5–2.4 ms. The old rule needed one of up to three drags to have no frame over 8 ms. That rule failed on runner hiccups and still passed a path that got slower everywhere, as long as no frame crossed 8 ms.
+- **New rule (`frame-budget.ts`):** five drags, alternating direction so the item never reaches the page edge, judged together:
+  - each drag keeps p95 within 8 ms (as before);
+  - the median of all frames stays within 4 ms (new, stricter);
+  - at most 2% of frames go over 8 ms;
+  - at most one frame goes over 33 ms.
+- **Shown to catch regressions:** an injected 3.5 ms per frame failed on the median (5.6 ms). An injected 10 ms every 25th frame failed with 20 of 445 frames over budget. The old rule passed the first. `frame-budget.test.ts` checks both of these cases, plus runner spikes like CI's, one 38 ms descheduled frame, a slow single drag, and a stall in every drag.
+- **Local:**
+  - all 60 together: 445 frames, median 1.0 ms, p95 1.9 ms, max 3.0 ms;
+  - one item snapping to 59: median 2.2 ms, p95 3.2 ms, max 4.0 ms;
+  - 3 of 3 runs passed.
+
+- **Gates (local, final source):**
+  - frontend lint (0 errors), `tsc` and build pass;
+  - full `pnpm test:coverage`: 243 files, 2,111 tests passed.
+- **Open:** CI is the run of record on shared runners.

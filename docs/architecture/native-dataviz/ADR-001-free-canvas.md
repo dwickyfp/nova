@@ -318,9 +318,17 @@ to a dashboard picture by `asset_id`, never by URL.
 - `qa-authoring.test.tsx`: marquee and Shift selection, moving two items in one
   change with guides, snapping to another item, a line following a dragged item
   during and after the drag, and the drag frame budget (after one warm-up drag
-  and a garbage collection): with
-  60 items every frame after the first stays within 8 ms whether all 60 move
-  together or one snaps against the other 59.
+  and a garbage collection) with 60 items, whether all 60 move together or one
+  snaps against the other 59. It is judged over five drags together
+  (`frame-budget.ts`, tested by `frame-budget.test.ts`):
+  - each drag keeps p95 within 8 ms;
+  - the median of all frames stays within 4 ms;
+  - at most 2% of frames go over 8 ms;
+  - at most one frame goes over 33 ms.
+
+  A runner's occasional slow frame passes. A slower drag path fails: 3.5 ms
+  added to every frame failed on the median, and 10 ms added to every 25th
+  frame failed on the 2% limit.
 - `editor.test.tsx`: select all, group, undo and redo by shortcut; align, send
   to back and lock from the Arrange menu; grid toggles and page settings
   validation and undo.
