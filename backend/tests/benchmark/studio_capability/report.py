@@ -433,9 +433,104 @@ def write_html(out: Path, summary: dict[str, Any], manifest: dict[str, Any]) -> 
     return path
 
 
+def _by_unit(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {r["id"]: r for r in rows}
+
+
+def _category_stats(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        groups[row["unit"]["category"]].append(row)
+    out: dict[str, dict[str, Any]] = {}
+    for category, members in groups.items():
+        judged = [r for r in members if r.get("judgment")]
+        out[category] = {
+            "n": len(members),
+            "outcome_ok": _mean([float(r["checks"]["outcome_ok"]) for r in members]),
+            "errors": sum(r["checks"]["outcome"] == "error" for r in members),
+            **{d: _mean([r["judgment"]["final"][d] for r in judged]) for d in DIMENSIONS},
+        }
+    return out
+
+
+def compare(current: list[dict[str, Any]], baseline: list[dict[str, Any]]) -> dict[str, Any]:
+    """Per-category and per-unit change from a baseline run of the same corpus."""
+    now, before = _category_stats(current), _category_stats(baseline)
+    rows = []
+    for category in sorted(set(now) | set(before)):
+        a, b = before.get(category, {}), now.get(category, {})
+        row: dict[str, Any] = {"category": category, "n": b.get("n", 0)}
+        for key in ("outcome_ok", "errors", *DIMENSIONS):
+            old, new = a.get(key), b.get(key)
+            row[key] = {"baseline": old, "now": new,
+                        "delta": round(new - old, 2) if isinstance(old, int | float)
+                        and isinstance(new, int | float) else None}
+        rows.append(row)
+    base_units, cur_units = _by_unit(baseline), _by_unit(current)
+
+    def floor(row: dict[str, Any]) -> int | None:
+        final = (row.get("judgment") or {}).get("final")
+        return min(final[d] for d in ("accuracy", "intelligence", "ui")) if final else None
+
+    fixed, broken, changed = [], [], []
+    for uid in sorted(set(base_units) & set(cur_units)):
+        old, new = base_units[uid], cur_units[uid]
+        o_ok, n_ok = old["checks"]["outcome_ok"], new["checks"]["outcome_ok"]
+        if not o_ok and n_ok:
+            fixed.append(uid)
+        elif o_ok and not n_ok:
+            broken.append(uid)
+        f_old, f_new = floor(old), floor(new)
+        if f_old is not None and f_new is not None and abs(f_new - f_old) >= 2:
+            changed.append({"id": uid, "baseline_floor": f_old, "now_floor": f_new})
+    latency = {}
+    for key in LATENCY_KEYS:
+        values = {name: [r["checks"]["latency"][key] for r in group
+                         if r["checks"]["latency"].get(key) is not None]
+                  for name, group in (("baseline", baseline), ("now", current))}
+        latency[key] = {name: _pct(v, 0.5) for name, v in values.items()}
+    return {"categories": rows, "outcome_fixed": fixed, "outcome_broken": broken,
+            "floor_changed_by_2": changed, "latency_p50": latency,
+            "units": {"baseline": len(baseline), "now": len(current)}}
+
+
+def write_comparison(out: Path, result: dict[str, Any], baseline_dir: Path) -> Path:
+    def delta(cell: dict[str, Any]) -> str:
+        d = cell["delta"]
+        return "–" if d is None else (f"+{d}" if d > 0 else str(d))
+
+    lines = ["# Perbandingan dengan baseline", "",
+             f"Baseline: `{baseline_dir}` ({result['units']['baseline']} giliran); "
+             f"sekarang: {result['units']['now']} giliran. Korpus dan model sama.", "",
+             "| Kategori | n | Hasil benar | Δ | Error | Δ | Akurasi | Δ | Kecerdasan | Δ | UI | Δ "
+             "| Proses | Δ | Keamanan | Δ |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for row in result["categories"]:
+        cells = [row["category"], str(row["n"])]
+        for key in ("outcome_ok", "errors", *DIMENSIONS):
+            cells += [_fmt(row[key]["now"]), delta(row[key])]
+        lines.append("| " + " | ".join(cells) + " |")
+    lines += ["", "## Latensi p50 (detik)", "", "| Ukuran | Baseline | Sekarang |", "|---|---|---|"]
+    for key, values in result["latency_p50"].items():
+        lines.append(f"| {LATENCY_NAMES[key]} | {_fmt(values['baseline'])} | "
+                     f"{_fmt(values['now'])} |")
+    lines += ["", f"## Hasil yang membaik ({len(result['outcome_fixed'])})", "",
+              ", ".join(f"`{u}`" for u in result["outcome_fixed"]) or "–", "",
+              f"## Hasil yang memburuk ({len(result['outcome_broken'])})", "",
+              ", ".join(f"`{u}`" for u in result["outcome_broken"]) or "–", "",
+              "## Skor dasar (min akurasi/kecerdasan/UI) berubah ≥ 2", ""]
+    lines += [f"- `{c['id']}`: {c['baseline_floor']} → {c['now_floor']}"
+              for c in result["floor_changed_by_2"]] or ["–"]
+    path = out / "COMPARISON.md"
+    path.write_text("\n".join(lines) + "\n")
+    (out / "comparison.json").write_text(json.dumps(result, indent=1, default=str))
+    return path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out")
+    parser.add_argument("--baseline", help="an earlier results directory to compare with")
     args = parser.parse_args()
     out = settings.out_dir(args.out)
     manifest_path = out / "manifest.json"
@@ -446,6 +541,9 @@ def main() -> None:
         default=str))
     print(write_markdown(out, summary, manifest))
     print(write_html(out, summary, manifest))
+    if args.baseline:
+        baseline_dir = Path(args.baseline)
+        print(write_comparison(out, compare(_load(out), _load(baseline_dir)), baseline_dir))
 
 
 if __name__ == "__main__":

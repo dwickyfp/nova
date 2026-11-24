@@ -313,12 +313,13 @@ async def judge_all(out: Path, judge: Judge, *, force: bool, concurrency: int,
     target.mkdir(exist_ok=True)
     gate = asyncio.Semaphore(concurrency)
     outage = asyncio.Lock()
-    state = {"refusals": 0, "stopped": False}
+    state = {"refusals": 0, "stopped": False, "epoch": 0}
 
-    async def refused(record_id: str, exc: GatewayRefused) -> None:
-        # One back-off for every worker: the others wait on the lock meanwhile.
+    async def refused(record_id: str, exc: GatewayRefused, epoch: int) -> None:
+        # One back-off for every worker: the others wait on the lock meanwhile. A call
+        # refused during a back-off another worker already took is simply retried.
         async with outage:
-            if state["stopped"]:
+            if state["stopped"] or state["epoch"] != epoch:
                 return
             state["refusals"] += 1
             print(f"{record_id}: gateway refused ({exc}); refusal {state['refusals']}",
@@ -328,6 +329,7 @@ async def judge_all(out: Path, judge: Judge, *, force: bool, concurrency: int,
                 state["stopped"] = True
                 return
             await asyncio.sleep(OUTAGE_WAIT_S)
+            state["epoch"] += 1
 
     async def one(record: dict[str, Any]) -> None:
         path = target / f"{record['id']}.json"
@@ -340,11 +342,11 @@ async def judge_all(out: Path, judge: Judge, *, force: bool, concurrency: int,
                 if state["stopped"]:
                     return
                 async with outage:
-                    pass  # wait out a back-off another worker started
+                    epoch = state["epoch"]  # wait out a back-off another worker started
                 try:
                     llm = await judge.score(payload, screenshot)
                 except GatewayRefused as exc:
-                    await refused(record["id"], exc)
+                    await refused(record["id"], exc, epoch)
                     continue
                 except Exception as exc:  # noqa: BLE001 - recorded and retried next run
                     print(f"{record['id']}: judge failed ({type(exc).__name__}: {exc})",

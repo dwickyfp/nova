@@ -273,3 +273,22 @@ def test_fixture_units_name_their_tools_as_the_turn_does() -> None:
     assert resolved["expect_tool_failure"] == ["mcp_abc12345"]
     simple = [u for u in units.values() if u["category"] == "simple"]
     assert simple and all("page" in u["expect_absent"] for u in simple)
+
+
+def test_comparison_reports_category_deltas_and_changed_outcomes(tmp_path: Path) -> None:
+    base, now = tmp_path / "base", tmp_path / "now"
+    _write_run(base)
+    _write_run(now)
+    record = json.loads((now / "judgments" / "session-001.t2.json").read_text())
+    record["final"] = {**record["final"], "accuracy": 5, "intelligence": 5, "ui": 5}
+    (now / "judgments" / "session-001.t2.json").write_text(json.dumps(record))
+    turn = json.loads((now / "turns" / "number-001.json").read_text())
+    turn["checks"]["outcome_ok"] = False
+    (now / "turns" / "number-001.json").write_text(json.dumps(turn))
+    result = report.compare(report._load(now), report._load(base))
+    assert result["outcome_broken"] == ["number-001"]
+    assert result["floor_changed_by_2"][0]["id"] == "session-001.t2"
+    row = next(r for r in result["categories"] if r["category"] == "session:follow_up")
+    assert row["accuracy"]["delta"] == 1.5  # the turn and its fresh twin share a category
+    page = report.write_comparison(now, result, base).read_text()
+    assert "Perbandingan dengan baseline" in page and "`number-001`" in page
