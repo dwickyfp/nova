@@ -1,7 +1,8 @@
 # ADR-001: Free-form dashboard canvas (dashboard schema 3)
 
-- Status: accepted. P0 (contract and upcaster) and P1 (frame renderer) are
-  implemented; P2 and P3 are open.
+- Status: accepted. P0 (contract and upcaster), P1 (frame renderer) and P2
+  part 1 (selection, snapping, arrange commands) are implemented; the rest of
+  P2 and P3 are open.
 - Owner decisions: one free-form canvas engine replaces GridStack, with no
   hybrid mode or feature flag. Grid assistance is an authoring aid only. The
   Dataviz assistant becomes Neva with per-batch approval (P3).
@@ -130,6 +131,44 @@ frame; the pure geometry lives in `frame.ts`. GridStack is removed.
 - Studio's artifact panel mounts the same `DashboardEditor`, so it uses this
   renderer with no Studio change.
 
+### Authoring (P2, part 1)
+
+Pure geometry is in `authoring.ts`, editor commands in `commands.ts`; each
+command returns one operation and a sentence for the screen-reader announcement.
+
+- Selection: a click selects, Shift/Ctrl/⌘ toggles, a drag on empty page draws a
+  marquee that selects what it touches in the open scope, Ctrl/⌘+A selects all
+  and Escape clears. Double-clicking a group opens it as the scope. Selected
+  siblings that are not locked move together; handles show for one item.
+- Snapping: edges and centres snap (12 page px) to other top-level items' edges
+  and centres, the page centre and margins (`grid.snap_to_elements`), and to
+  column edges (`grid.snap`); an axis with no hit falls to the baseline. Guides
+  are drawn for item and page lines (columns are already visible) with gap labels
+  to the nearest neighbour on each side. Alt/⌘ suspends snapping; nothing snaps
+  inside a group.
+- Commands: align (several to their bounds, one to the page or its group),
+  distribute (three or more, outer ones fixed), Auto-arrange (content kinds onto
+  whole columns and rows in reading order around locked items; refused when a
+  fixed-height page would overflow), restack, group/ungroup, lock/hide toggles,
+  duplicate (new IDs, copied connectors rejoin copied ends) and delete. Grid
+  show/snap toggles and the page settings dialog commit `page.canvas.set`.
+- `elements.group`/`elements.ungroup` are server operations, not remove + add,
+  because removing elements cascades into interactions, tab and phone order.
+  Grouping keeps screen positions and stacks the group at the topmost member;
+  ungrouping keeps positions and carries the group's hidden/locked flags.
+- Undo records the inverse of every canvas operation; a removal is undone by
+  re-adding each item above its former neighbour and restoring tab order, phone
+  order and interactions. Removing only a group's child cannot be put back in
+  place: the announcement says so and the undo history is cleared, so Undo
+  never skips over it.
+- Performance: pointer moves are coalesced into one animation frame. A move on
+  the page translates the moving nodes (`translate`) instead of re-rendering
+  them, and the drag view (guides, live boxes) lives in a small external store,
+  so a frame re-renders only the overlay and lines, not the canvas; the nodes
+  keep their translation until the moved page renders. A scrolling page grows
+  in 120 px steps to follow a drag downwards. Resizes and moves inside a group
+  re-render the affected items only.
+
 ## Consequences
 
 - Readers always receive schema 3. Integrations may keep creating schema-2
@@ -137,8 +176,9 @@ frame; the pure geometry lives in `frame.ts`. GridStack is removed.
 - The Dataviz assistant tools and Studio publish keep using grid cells through
   `legacy_widgets` until P3 moves them to element operations.
 - The editor draws pages with the frame renderer (P1). Elements a grid cannot
-  express (shapes, icons, connectors, annotations, groups) are drawn when an
-  integration creates them, but the editor cannot create them until P2.
+  express (shapes, icons, connectors, annotations) are drawn when an
+  integration creates them; the editor groups and ungroups items (P2 part 1)
+  but cannot create the other kinds until P2 part 2.
 - The metadata schema moves to 63. A shared development database must be
   upgraded by the operator procedure (maintenance, backup, migrator, then the
   application's configured schema) before this code runs there.
@@ -151,9 +191,11 @@ frame; the pure geometry lives in `frame.ts`. GridStack is removed.
   vector layer), mobile reading-order projection, accessible reading order,
   GridStack removed, Studio artifact panel on the same renderer, screenshot parity
   with upcast schema-2 dashboards at 1,200 px (≤ 0.1 % pixel difference).
-- **P2**: authoring UI: grid settings, snapping to the grid and to element edges
-  and centres (Alt/⌘ suspends), smart guides with distances, align/distribute,
-  Auto-arrange.
+- **P2**: authoring UI. Part 1: selection and marquee, grid settings, snapping
+  to the grid and to element edges and centres (Alt/⌘ suspends), smart guides
+  with distances, align/distribute, Auto-arrange, z-order, group, lock, hide and
+  keyboard shortcuts. Part 2: selection pane (layer and tab order), text, shape,
+  icon and background tools, connectors. Part 3: images.
 - **P3**: Neva on canvas operations with a ghost preview, per-batch Apply and a
   visible cursor.
 
@@ -188,3 +230,22 @@ frame; the pure geometry lives in `frame.ts`. GridStack is removed.
   above 16 levels); `main` draws that first grid item differently from the
   identical second one, while the frame draws both the same. Phone captures
   differ by at most 0.03% of pixels, none above 16 levels inside the canvas.
+
+## Acceptance evidence for P2 part 1
+
+- `authoring.test.ts`: smart snapping (edges, centres, page centre, columns
+  without guide lines, free placement, resize edges, gap labels), align,
+  distribute, restack, Auto-arrange (overlaps, locked obstacles, selected only,
+  fixed-height refusal) and every command's undo round trip.
+- `qa-authoring.test.tsx`: marquee and Shift selection, moving two items in one
+  change with guides, snapping to another item, a line following a dragged item
+  during and after the drag, and the drag frame budget (after one warm-up drag
+  and a garbage collection): with
+  60 items every frame after the first stays within 8 ms whether all 60 move
+  together or one snaps against the other 59.
+- `editor.test.tsx`: select all, group, undo and redo by shortcut; align, send
+  to back and lock from the Arrange menu; grid toggles and page settings
+  validation and undo.
+- `backend/tests/unit/test_native_viz_canvas.py`: grouping keeps positions,
+  stacking and interactions; refusals for nested, unknown and repeated members;
+  ungrouping keeps hidden/locked.

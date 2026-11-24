@@ -200,6 +200,28 @@ class ElementsReorder(Contract):
     element_ids: tuple[UUID, ...] = Field(max_length=MAX_ELEMENTS_PER_PAGE)
 
 
+class ElementsGroup(Contract):
+    """Put top-level elements into a new group, stacked where the topmost of them was.
+
+    The group's box is the smallest box around its members; their positions on the
+    page do not change.
+    """
+
+    op: Literal["elements.group"] = "elements.group"
+    page_id: UUID
+    group_id: UUID
+    element_ids: tuple[UUID, ...] = Field(min_length=1, max_length=MAX_ELEMENTS_PER_PAGE)
+    name: str = Field(default="", max_length=120)
+
+
+class ElementsUngroup(Contract):
+    """Release a top-level group's children onto the page, stacked where the group was."""
+
+    op: Literal["elements.ungroup"] = "elements.ungroup"
+    page_id: UUID
+    group_id: UUID
+
+
 class PageCanvasSet(Contract):
     op: Literal["page.canvas.set"] = "page.canvas.set"
     page_id: UUID
@@ -222,7 +244,7 @@ Change = Annotated[
     LayoutChange | WidgetAdd | WidgetReplace | WidgetRemove | PageAdd | PageRemove
     | PageRename | PageOrder | Rename | FiltersReplace | ActionsReplace | DatasetsReplace
     | ElementsAdd | ElementsUpdate | ElementsRemove | ElementsArrange | ElementsReorder
-    | PageCanvasSet | PageTabOrderSet | PageMobileSet,
+    | ElementsGroup | ElementsUngroup | PageCanvasSet | PageTabOrderSet | PageMobileSet,
     Field(discriminator="op"),
 ]
 

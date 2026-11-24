@@ -431,6 +431,14 @@ export type ElementsArrange = {
   "placements": Array<ElementPlacement>;
 };
 
+export type ElementsGroup = {
+  "op"?: "elements.group";
+  "page_id": string;
+  "group_id": string;
+  "element_ids": Array<string>;
+  "name"?: string;
+};
+
 export type ElementsRemove = {
   "op"?: "elements.remove";
   "page_id": string;
@@ -441,6 +449,12 @@ export type ElementsReorder = {
   "op"?: "elements.reorder";
   "page_id": string;
   "element_ids": Array<string>;
+};
+
+export type ElementsUngroup = {
+  "op"?: "elements.ungroup";
+  "page_id": string;
+  "group_id": string;
 };
 
 export type ElementsUpdate = {
@@ -796,7 +810,7 @@ export type ObjectSource = {
 export type Operation = {
   "operation_id": string;
   "expected_revision": number;
-  "changes": Array<LayoutChange | WidgetAdd | WidgetReplace | WidgetRemove | PageAdd | PageRemove | PageRename | PageOrder | Rename | FiltersReplace | ActionsReplace | DatasetsReplace | ElementsAdd | ElementsUpdate | ElementsRemove | ElementsArrange | ElementsReorder | PageCanvasSet | PageTabOrderSet | PageMobileSet>;
+  "changes": Array<LayoutChange | WidgetAdd | WidgetReplace | WidgetRemove | PageAdd | PageRemove | PageRename | PageOrder | Rename | FiltersReplace | ActionsReplace | DatasetsReplace | ElementsAdd | ElementsUpdate | ElementsRemove | ElementsArrange | ElementsReorder | ElementsGroup | ElementsUngroup | PageCanvasSet | PageTabOrderSet | PageMobileSet>;
 };
 
 export type OperationReceipt = {

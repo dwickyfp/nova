@@ -511,6 +511,10 @@ describe('QA grid', { timeout: 30_000 }, () => {
     await expect.poll(() => operations.length).toBe(1)
     await expect.element(screen.getByText('Plain notes')).not.toBeInTheDocument()
 
+    // This editor has not heard of Bea's change yet. Holding the change feed back
+    // keeps its poll (every 4 s) from loading her revision before Undo is pressed,
+    // which on a slow run turned the refused undo into an accepted one.
+    eventsDown = true
     otherUserCommits(() => {
       definition.title = 'Sales overview by Bea'
       definition.pages[0].widgets[0].layout = { x: 0, y: 0, w: 4, h: 2 }

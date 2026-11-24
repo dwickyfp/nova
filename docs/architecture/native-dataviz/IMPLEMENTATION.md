@@ -608,12 +608,26 @@ Moves and resizes commit one `elements.arrange` per gesture or key press; adding
 duplicating and replacing widgets still go through the grid-shaped changes.
 GridStack is no longer a dependency.
 
-Active: the contract, upcaster, adapters, migration and the frame renderer.
-Tested: server golden, property and digest tests, the browser upcaster against
-the same goldens, the PG17 upgrade from schema 62 (CI), `frame.test.ts` and the
-editor browser suites. Open: P2 authoring aids (grid settings, smart guides,
-align/distribute, creating shapes, icons, connectors and groups), resolving
-data-point anchors and value bindings, and P3 Neva on canvas operations.
+Authoring (P2, part 1) adds a selection of several items, a marquee, moving
+them together, smart snapping to other items' edges and centres with guides and
+gap labels (`authoring.ts`), and editor commands (`commands.ts`) that each build
+one operation: align, distribute, Auto-arrange, restack (`elements.reorder`),
+`elements.group`/`elements.ungroup` (server ops that keep positions, stacking,
+interactions, tab and phone order), lock/hide (`elements.update`), duplicate and
+delete. Grid show/snap and page settings commit `page.canvas.set`. Undo records
+the inverse of every canvas operation (`inverseAll` in `operations.ts`). A move
+of items on the page translates their nodes each animation frame instead of
+re-rendering them, so a drag costs the same with 6 or 60 items.
+
+Active: the contract, upcaster, adapters, migration, the frame renderer and
+P2 part 1. Tested: server golden, property and digest tests, the browser
+upcaster against the same goldens, the PG17 upgrade from schema 62 (CI),
+`frame.test.ts`, `authoring.test.ts`, `qa-authoring.test.tsx` (including the
+60-item drag frame budget) and the editor browser suites. Open: P2 part 2
+(selection pane with layer and tab order, creating text, shapes, icons,
+backgrounds and connectors, keyboard-only scenario), P2 part 3 (images),
+resolving data-point anchors and value bindings, and P3 Neva on canvas
+operations.
 
 ## Dataviz assistant tools
 

@@ -42,8 +42,10 @@ import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, ty
 import { activeDrop, DROP_TYPE, firstFreeSlot, gridWidgets, sizeFor, slotAt, type DropItem, type Widget } from './layout'
 import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
 import { nevaWords, type NevaActivity } from './neva-pointer'
-import { applyLocal, inverse, type Change } from './operations'
-import { clampBox, countElements, findElement, frameGrid, nudgeBox, pageSize, sameBox, tabOrder, toGeometry, type Arrow } from './frame'
+import { applyLocal, inverseAll, type Change } from './operations'
+import { countElements, tabOrder, type Arrow } from './frame'
+import { ArrangeMenu } from './arrange-menu'
+import * as commands from './commands'
 import { ShareDialog } from './share-dialog'
 import { ScheduleDialog } from './schedule-dialog'
 import { CommentsPanel } from './comments-panel'
@@ -150,7 +152,10 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const [tab, setTab] = useState<'canvas' | 'data'>('canvas')
   const [editing, setEditing] = useState(false)
   const [pageId, setPageId] = useState<string | null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selection, setSelection] = useState<string[]>([])
+  // The item last picked; comments and Neva's page context follow it.
+  const selected = selection[selection.length - 1] ?? null
+  const clearSelection = () => setSelection([])
   const [status, setStatus] = useState<Status>('saved')
   const [inspector, setInspector] = useState<Inspector | null>(null)
   // The cell a Text item was dropped on, until the text is added or the dialog closes.
@@ -367,11 +372,11 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         lastSequence.current = Math.max(lastSequence.current, receipt.event_sequence)
         setStatus('saved')
         if (options.record !== false) {
-          const backward = changes.map(change => inverse(change, before)).filter((item): item is Change => item !== null).reverse()
-          if (backward.length === changes.length) {
-            setUndo(stack => [...stack.slice(-49), { forward: changes, backward }])
-            setRedo([])
-          }
+          const backward = inverseAll(changes, before)
+          if (backward) setUndo(stack => [...stack.slice(-49), { forward: changes, backward }])
+          // A change that cannot be undone ends the history, so Undo never skips over it.
+          else setUndo([])
+          setRedo([])
         }
         return true
       } catch (error) {
@@ -405,32 +410,47 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       if (ok) { setRedo(stack => stack.slice(0, -1)); setUndo(stack => [...stack, entry]) }
     })
   }
+  // Runs an editor command: its changes as one undoable step, its sentence for screen readers.
+  const run = (command: commands.Command) => {
+    setAnnouncement(command.message)
+    if (!command.changes) return
+    if (command.select) setSelection(command.select)
+    void apply(command.changes)
+  }
+  const allItems = () => page ? [...(page.elements ?? []), ...(page.legacy_spacers ?? [])].map(item => item.element_id) : []
   useEffect(() => {
     if (!editing) return
     const handler = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('input, textarea, [contenteditable="true"], .monaco-editor')) return
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
-        event.preventDefault()
-        if (event.shiftKey) redoLast(); else undoLast()
+      if (target?.closest('input, textarea, select, [contenteditable="true"], .monaco-editor, [role="dialog"], [role="menu"]')) return
+      if (!page) return
+      const command = event.metaKey || event.ctrlKey
+      const key = event.key.toLowerCase()
+      const shortcut = (handled: () => void) => { event.preventDefault(); handled() }
+      if (command && key === 'z') return shortcut(() => event.shiftKey ? redoLast() : undoLast())
+      if (command && key === 'y') return shortcut(redoLast)
+      if (event.key === 'Escape' && selection.length) return shortcut(clearSelection)
+      if (command && key === 'a') return shortcut(() => {
+        const all = allItems()
+        setSelection(all)
+        setAnnouncement(`${all.length} item${all.length === 1 ? '' : 's'} selected`)
+      })
+      // A focused item that is not selected is what the keyboard acts on.
+      const focused = target?.closest<HTMLElement>('[data-element-id]')?.dataset.elementId
+      const targets = focused && !selection.includes(focused) ? [focused] : selection
+      if (!targets.length) return
+      const id = () => crypto.randomUUID()
+      if (event.key === 'Delete' || event.key === 'Backspace') return shortcut(() => run(commands.removeCommand(page, targets)))
+      if (command && key === 'g') return shortcut(() => run(event.shiftKey ? commands.ungroupCommand(page, targets) : commands.groupCommand(page, targets, id())))
+      if (command && key === 'd') return shortcut(() => run(commands.duplicateCommand(page, targets, id)))
+      if (command && event.shiftKey && key === 'l') return shortcut(() => run(commands.toggleCommand(page, targets, 'locked')))
+      if (command && event.shiftKey && key === 'h') return shortcut(() => run(commands.toggleCommand(page, targets, 'hidden')))
+      if (command && (event.code === 'BracketRight' || event.code === 'BracketLeft')) {
+        const up = event.code === 'BracketRight'
+        return shortcut(() => run(commands.restackCommand(page, targets, event.shiftKey ? up ? 'front' : 'back' : up ? 'forward' : 'backward')))
       }
-      if (event.key === 'Escape') { setSelected(null) }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selected && page) {
-        const widget = gridWidgets(page).find(item => item.widget_id === selected)
-        if (widget) { event.preventDefault(); void apply([{ op: 'widget.remove', page_id: page.page_id, widget_id: widget.widget_id }]); setSelected(null) }
-      }
-      if (selected && page && event.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
-        event.preventDefault()
-        const element = findElement(page.elements ?? [], selected) ?? page.legacy_spacers?.find(item => item.element_id === selected)
-        if (!element) return
-        if (element.locked) { setAnnouncement('This item is locked'); return }
-        const nested = !(page.elements ?? []).some(item => item.element_id === selected)
-        const before = element.geometry
-        const box = clampBox(nudgeBox(before, event.key as Arrow, event.shiftKey, frameGrid(page), pageSize(page).width,
-          page.canvas?.grid?.snap ?? true), page, { nested, resize: event.shiftKey })
-        if (sameBox(box, before)) { setAnnouncement('It cannot go further that way'); return }
-        void apply([{ op: 'elements.arrange', page_id: page.page_id, placements: [{ element_id: selected, geometry: toGeometry(box, before.rotation ?? 0) }] }])
-        setAnnouncement(`${event.shiftKey ? 'Resized' : 'Moved'} to x ${box.x}, y ${box.y}, ${box.w} by ${box.h} pixels`)
+      if (event.altKey && !command && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        return shortcut(() => run(commands.nudgeCommand(page, targets, event.key as Arrow, event.shiftKey)))
       }
     }
     window.addEventListener('keydown', handler)
@@ -469,7 +489,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           layout: slotAt(gridWidgets(page), size.w, size.h, inspector?.mode === 'new' ? inspector.at : null), chart_ref: { chart_id: chart.chart_id, revision: 1 } } as Widget
         if (await apply([{ op: 'widget.add', page_id: page.page_id, widget }])) {
           setInspector(null)
-          setSelected(widget.widget_id)
+          setSelection([widget.widget_id])
         }
       }
       await client.invalidateQueries({ queryKey: ['native-dataviz', 'chart', epoch, chart.chart_id] })
@@ -746,7 +766,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         {canEdit && <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-9' aria-label='Version history' onClick={() => setHistoryOpen(true)}><History /></Button></TooltipTrigger><TooltipContent>Version history</TooltipContent></Tooltip>}
         {canManage && <Button variant='outline' size='sm' className='h-9' aria-label='Share' onClick={() => setShareOpen(true)}><Share2 /><span className={label}>Share</span></Button>}
         {canEdit && <Button variant='outline' size='sm' className='h-9' aria-label={editing ? 'Done' : 'Edit'}
-          onClick={() => { setEditing(!editing); setSelected(null); setInspector(null) }}>
+          onClick={() => { setEditing(!editing); clearSelection(); setInspector(null) }}>
           {editing ? <><Check /><span className={label}>Done</span></> : <><Pencil /><span className={label}>Edit</span></>}
         </Button>}
         {canPublish && state !== 'Published' && <Button size='sm' className='h-9' aria-label='Publish' disabled={status === 'saving'} onClick={() => setPublishOpen(true)}>
@@ -765,7 +785,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           {definition.pages.map(item => {
             const current = item.page_id === page.page_id
             return <button key={item.page_id} type='button' aria-current={current ? 'page' : undefined}
-              onClick={() => { setPageId(item.page_id); setSelected(null) }}
+              onClick={() => { setPageId(item.page_id); clearSelection() }}
               className={cn('h-8 shrink-0 border-b-2 px-2 text-sm transition-colors focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                 current ? 'border-brand font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
               {item.title}
@@ -782,6 +802,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'table' })} onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
         <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'text' })} onClick={() => { setTextAt(null); setTextOpen(true) }}><Type />Text</Button>
         <Button variant='ghost' size='sm' onClick={openFilters}><Filter />Filters</Button>
+        <span className='mx-1 h-5 w-px bg-border' aria-hidden />
+        <ArrangeMenu page={page} selection={selection} disabled={status === 'saving'} run={run} />
         <span className='mx-1 h-5 w-px bg-border' aria-hidden />
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Undo' disabled={!undo.length || status === 'saving'} onClick={undoLast}><Undo2 /></Button></TooltipTrigger><TooltipContent>Undo</TooltipContent></Tooltip>
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Redo' disabled={!redo.length || status === 'saving'} onClick={redoLast}><Redo2 /></Button></TooltipTrigger><TooltipContent>Redo</TooltipContent></Tooltip>
@@ -803,7 +825,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             editing={editing} onEdit={openFilters} readOnly={!canInteract && !editing} />
           <DashboardCanvas definition={definition} page={page} draft={editing} editing={editing}
             collaborators={presence.others} onPointer={presence.point}
-            selectedId={selected} onSelect={setSelected} onArrange={onArrange}
+            selection={selection} onSelect={setSelection} onArrange={onArrange}
             onEditChart={(widget, chart) => setInspector({ mode: 'edit', widget, chart })}
             onDropWidget={(item, cell) => {
               if (pageFull) toast.info(PAGE_FULL)

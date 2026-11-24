@@ -500,3 +500,79 @@ def test_reading_order_is_rows_top_to_bottom_then_left_to_right():
     built = v3(page(below, right, left)).pages[0]
     assert [str(e.element_id) for e in reading_order(built.elements)] == [
         left["element_id"], right["element_id"], below["element_id"]]
+
+
+def test_grouping_keeps_positions_stack_and_interactions():
+    back, chart, middle, front = shape(), visual(x=100, y=40), visual(x=600, y=300), shape(x=10)
+    field = {"dataset_id": ident(), "dataset_revision": 1, "field_id": "region"}
+    action = {"action_id": ident(), "kind": "filter", "source_widget_id": chart["element_id"],
+              "target_widget_ids": [middle["element_id"]],
+              "mappings": [{"source": field, "target": field}]}
+    document = v3(page(back, chart, middle, front,
+                       tab_order=[chart["element_id"], middle["element_id"]],
+                       mobile={"order": [front["element_id"], chart["element_id"],
+                                         middle["element_id"]],
+                               "hidden": [chart["element_id"], middle["element_id"]]}),
+                  actions=[action])
+    page_id, group_id = str(document.pages[0].page_id), ident()
+    grouped = apply(document, {"op": "elements.group", "page_id": page_id, "group_id": group_id,
+                               "element_ids": [middle["element_id"], chart["element_id"]],
+                               "name": "Sales"})
+    top = grouped.pages[0].elements
+    # Stacked where the topmost member was, members keep their own order.
+    assert [str(item.element_id) for item in top] == [back["element_id"], group_id,
+                                                      front["element_id"]]
+    group = top[1]
+    assert (group.name, group.geometry.x, group.geometry.y, group.geometry.w,
+            group.geometry.h) == ("Sales", 100, 40, 900, 560)
+    assert [(str(c.element_id), c.geometry.x, c.geometry.y) for c in group.children] == [
+        (chart["element_id"], 0, 0), (middle["element_id"], 500, 260)]
+    assert grouped.actions == document.actions
+    assert [str(i) for i in grouped.pages[0].tab_order] == [chart["element_id"],
+                                                            middle["element_id"]]
+    assert [str(i) for i in grouped.pages[0].mobile.order] == [front["element_id"], group_id]
+    assert [str(i) for i in grouped.pages[0].mobile.hidden] == [group_id]
+
+    released = apply(grouped, {"op": "elements.ungroup", "page_id": page_id,
+                               "group_id": group_id})
+    assert [(str(e.element_id), e.geometry.x, e.geometry.y)
+            for e in released.pages[0].elements] == [
+        (back["element_id"], 0, 0), (chart["element_id"], 100, 40),
+        (middle["element_id"], 600, 300), (front["element_id"], 10, 0)]
+    assert [str(i) for i in released.pages[0].mobile.order] == [
+        front["element_id"], chart["element_id"], middle["element_id"]]
+    assert released.actions == document.actions
+
+
+def test_grouping_refuses_nested_unknown_or_repeated_members():
+    a, b = shape(), shape(x=100)
+    document = v3(page(a, b))
+    page_id, group_id = str(document.pages[0].page_id), ident()
+    grouped = apply(document, {"op": "elements.group", "page_id": page_id, "group_id": group_id,
+                               "element_ids": [a["element_id"]]})
+    for members, message in (([a["element_id"]], "page itself"),
+                             ([b["element_id"], b["element_id"]], "once"),
+                             ([ident()], "page itself")):
+        with pytest.raises(ValueError, match=message):
+            apply(grouped, {"op": "elements.group", "page_id": page_id, "group_id": ident(),
+                            "element_ids": members})
+    with pytest.raises(ValueError, match="already exists"):
+        apply(grouped, {"op": "elements.group", "page_id": page_id, "group_id": b["element_id"],
+                        "element_ids": [b["element_id"]]})
+    with pytest.raises(ValueError, match="Only a group"):
+        apply(grouped, {"op": "elements.ungroup", "page_id": page_id,
+                        "group_id": b["element_id"]})
+
+
+def test_ungrouping_keeps_what_the_group_hid_or_locked():
+    a = shape(x=20, y=30)
+    group = {"kind": "group", "element_id": ident(), "hidden": True, "locked": True,
+             "geometry": {"x": 100, "y": 100, "w": 200, "h": 200}, "children": [a]}
+    document = v3(page(group, tab_order=[group["element_id"]]))
+    page_id = str(document.pages[0].page_id)
+    after = apply(document, {"op": "elements.ungroup", "page_id": page_id,
+                             "group_id": group["element_id"]})
+    child = after.pages[0].elements[0]
+    assert (child.geometry.x, child.geometry.y, child.hidden, child.locked) == (120, 130, True,
+                                                                              True)
+    assert after.pages[0].tab_order == ()

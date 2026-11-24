@@ -90,7 +90,7 @@ async function mountCanvas(width = 1000, title = '') {
   const noop = () => undefined
   const screen = await render(<QueryClientProvider client={client}>
     <div style={{ width, height: 600, display: 'flex', flexDirection: 'column' }}>
-      <DashboardCanvas definition={dashboardDefinition} page={pageWith(title)} draft={false} editing={false} selectedId={null}
+      <DashboardCanvas definition={dashboardDefinition} page={pageWith(title)} draft={false} editing={false} selection={[]}
         onSelect={noop} onArrange={noop} onEditChart={noop} onDuplicate={noop} onRemove={noop}
         contextFor={() => BASE} onSelectValue={onSelectValue} interactive />
     </div>
@@ -375,7 +375,7 @@ describe('grid dashboard spacers', () => {
     // 1,200 page pixels across plus the canvas padding, so the page draws at its saved size.
     return render(<QueryClientProvider client={client}>
       <div style={{ width: 1220, height: 900, display: 'flex', flexDirection: 'column' }}>
-        <DashboardCanvas definition={dashboardDefinition} page={spaced()} draft={false} editing={editing} selectedId={null}
+        <DashboardCanvas definition={dashboardDefinition} page={spaced()} draft={false} editing={editing} selection={[]}
           onSelect={noop} onArrange={noop} onEditChart={noop} onDuplicate={noop} onRemove={noop} contextFor={() => BASE} onSelectValue={noop} />
       </div>
     </QueryClientProvider>)

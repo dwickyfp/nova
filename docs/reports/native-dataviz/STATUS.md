@@ -1075,3 +1075,63 @@ by a recorded decision and 3 are blocked.
   bundle budget (159.7/175 kB largest chunk, 677.1/690 kB first load),
   licenses, component schemas and 236 files / 2,027 tests with coverage pass.
   No backend file changed.
+
+## Free canvas P2 part 1 (2026-11-24)
+
+- **Built:** canvas authoring on the frame
+  ([ADR-001](../../architecture/native-dataviz/ADR-001-free-canvas.md#authoring-p2-part-1)):
+  multi-select (Shift/Ctrl/⌘ click, marquee, select all), moving the selection
+  together, smart snapping to items' edges and centres, the page centre and
+  margins and the columns, guides with gap labels (Alt/⌘ suspends), the
+  Arrange menu (align, space evenly, Auto-arrange, stacking, group/ungroup,
+  lock/hide, duplicate, delete), grid **Show grid** and **Snap to grid**
+  toggles, **Page and grid settings**, keyboard shortcuts with announcements,
+  and undo for every canvas operation. New server operations
+  `elements.group`/`elements.ungroup` (no metadata migration). Docs:
+  `/docs/dataviz/native-dashboards` and `/docs/dataviz/native-documents`.
+- **Active:** in development on my own web/query/Vite processes (8360/8361/5360)
+  as alice, on a new private dashboard; screenshots of selection, marquee,
+  drag guides, the Arrange menu, page settings, grouping and the docs page in
+  light and dark. No LLM turns were run and no container was touched.
+- **Found and fixed live:** the selection outline drew over the Arrange menu and
+  the settings dialog (the frame now isolates its stacking context). Found by
+  tests: undo restored absent flags as `null`, which the server refuses; it now
+  restores the defaults.
+- **Drag budget (60 items, local, development React):** after one warm-up drag
+  and a garbage collection, all 60 moving together: median 1.1–1.3 ms, worst
+  frame 2.5–4.3 ms; one item snapping to the other 59: median 1.4–2.3 ms, worst
+  4.1–5.7 ms. The first build re-rendered every item per frame (median 6.7–8.0
+  ms, worst 13–18 ms); moving nodes by `translate` and keeping the drag view
+  outside React state brought it under budget. In the full parallel suite a
+  single frame can be descheduled (21 ms and 38 ms seen once each), so the test
+  measures up to three drags: each must keep p95 within 8 ms and one must keep
+  every frame within 8 ms.
+- **Full-suite attempts (frontend coverage):** attempt 1 failed NDV-AGENT-013
+  (pointer 0.34 px past its target while gliding; passes alone 3/3 and in its
+  file 2/2); attempt 2 failed NDV-GRID-016 and NDV-REVIS-010 (a locator built
+  from an accessible name that changes when the chart title loads, and a
+  reload; both pass in their file); attempt 3 and 4 failed the drag budget on
+  one descheduled frame, which led to the measurement above; attempt 5 passed
+  239 files / 2,067 tests. On the final source: attempts 6 and 8 failed
+  NDV-GRID-013, the timeout P1 also saw. Its cause was the test, not undo:
+  the editor's 4-second change poll could load the other editor's revision
+  before Undo was pressed, so the undo was correctly accepted instead of
+  refused (forcing the poll first reproduced it every time). The test now
+  holds the change feed back until Undo; no assertion changed. Attempt 7
+  failed the Studio map test `map-surface.test.tsx` (the map did not finish
+  loading; it also fails 1 run in 3 alone and no Studio file changed here).
+  Attempt 9 failed the 60-item snapping drag on the wrong item: a retry
+  started where the first drag left the item, under the next row's item, and
+  pressed that one. The drag now goes upward onto items drawn beneath it, and
+  every attempt checks it moved the item it pressed. Attempt 10 passed 239
+  files / 2,067 tests.
+- **Gates (local, on `f3ded42f` + P2 part 1, final source):** frontend lint
+  (0 errors), build, bundle budget (159.7/175 kB largest chunk, 680.6/690 kB first load),
+  licenses, component schemas, coverage as above; backend changed-file Ruff,
+  full-application mypy, 13,591 unit tests with coverage, agent scorecard
+  54/54 scenarios and 428 trajectories (a first trajectory run without the
+  deployment `.env` failed 5 cases on the missing signing key; with it, all
+  pass). PG integration runs in CI.
+- **Open:** P2 part 2 (selection pane with layer and tab order, text, shape,
+  icon and background tools, connectors, keyboard-only scenario, reference
+  scenarios 9 and 10 by hand) and part 3 (images).
