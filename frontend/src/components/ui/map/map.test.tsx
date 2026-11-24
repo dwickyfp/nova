@@ -5,6 +5,9 @@ import { userEvent } from "vitest/browser";
 import {
   Map,
   MapControls,
+  MapControlButton,
+  MapControlGroup,
+  MapControlStack,
   MapMarker,
   MarkerContent,
   MarkerPopup,
@@ -220,4 +223,57 @@ it("handles a rejected fullscreen request with a visible message", async () => {
   await expect
     .element(screen.getByText("Fullscreen is unavailable."))
     .toBeVisible();
+});
+
+it("offers in-map icon actions with a name, tooltip, pressed state and keyboard use", async () => {
+  const fit = vi.fn();
+  const unavailable = vi.fn();
+  const style = businessMapStyle();
+  const screen = await render(
+    <div style={{ height: 320 }}>
+      <Map
+        styles={{ light: style, dark: style }}
+        center={coordinates[0]}
+        zoom={9}
+        transformRequest={localMapRequest}
+      >
+        <MapControlStack>
+          <MapControlGroup>
+            <MapControlButton label="Show all locations" onClick={fit}>
+              <svg />
+            </MapControlButton>
+            <MapControlButton label="3D view" pressed onClick={vi.fn()}>
+              <svg />
+            </MapControlButton>
+            <MapControlButton
+              label="Offline"
+              tooltip="Offline could not load"
+              disabled
+              onClick={unavailable}
+            >
+              <svg />
+            </MapControlButton>
+          </MapControlGroup>
+        </MapControlStack>
+      </Map>
+    </div>,
+  );
+  const show = screen.getByRole("button", { name: "Show all locations" });
+  await expect.element(show).toBeVisible();
+  const box = show.element().getBoundingClientRect();
+  expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(32);
+  await expect
+    .element(screen.getByRole("button", { name: "3D view" }))
+    .toHaveAttribute("aria-pressed", "true");
+  expect(show.element().hasAttribute("aria-pressed")).toBe(false);
+  (show.element() as HTMLElement).focus();
+  await expect.element(screen.getByRole("tooltip")).toHaveTextContent("Show all locations");
+  await userEvent.keyboard("{Enter}");
+  expect(fit).toHaveBeenCalledTimes(1);
+  const offline = screen.getByRole("button", { name: "Offline" });
+  await expect.element(offline).toHaveAttribute("aria-disabled", "true");
+  (offline.element() as HTMLElement).focus();
+  await expect.element(screen.getByRole("tooltip")).toHaveTextContent("Offline could not load");
+  await userEvent.keyboard("{Enter}");
+  expect(unavailable).not.toHaveBeenCalled();
 });

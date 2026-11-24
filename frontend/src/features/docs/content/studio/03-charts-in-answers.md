@@ -88,6 +88,14 @@ ke Malang lewat jalan").
   its position is approximate.
 - Routes and pictures are saved with the answer, so a reopened conversation
   shows the same map without looking them up again.
+- The buttons in the top-right corner of a map act on it. **Show all
+  locations** brings every place back into view after you move the map.
+  **3D view** tilts the street map to show buildings; press it again to return
+  to the flat map. If the 3D map cannot load, the button says so and the
+  street map stays.
+- Scrolling over a map scrolls the page. To zoom, hold Ctrl (⌘ on a Mac) while
+  you scroll, or pinch on a touch screen, where you move the map with two
+  fingers.
 - The street map is loaded from an online map service, which sees the area
   you are looking at but none of your data.
 

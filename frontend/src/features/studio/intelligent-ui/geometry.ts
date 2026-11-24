@@ -84,3 +84,26 @@ export function geoBounds(features: GeoJSON.Feature<Geometry>[]): [[number, numb
     [Math.max(...longitudes), Math.max(...points.map((p) => p[1]))],
   ];
 }
+
+/** The frame for named places and every road route between them, alternatives included. */
+export function placeBounds(
+  places: { lat: number; lon: number }[],
+  lines: [number, number][][],
+): [[number, number], [number, number]] | null {
+  return geoBounds([
+    ...places.map((place, index) => ({
+      type: "Feature" as const,
+      id: index,
+      geometry: { type: "Point" as const, coordinates: [place.lon, place.lat] },
+      properties: {},
+    })),
+    ...lines
+      .filter((line) => line.length > 1)
+      .map((line, index) => ({
+        type: "Feature" as const,
+        id: -1 - index,
+        geometry: { type: "LineString" as const, coordinates: line },
+        properties: {},
+      })),
+  ]);
+}

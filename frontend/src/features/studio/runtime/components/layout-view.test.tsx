@@ -203,6 +203,26 @@ describe("maps and pictures on a page", () => {
     expect(fetch.mock.calls.map(([input]) => String(input)).filter((url) => url.includes("osrm"))).toEqual([]);
   });
 
+  it("moves between routes with the arrow keys, one tab stop for the group", async () => {
+    const program = placeMap(
+      `[{line: "${FAST}", distance_m: 151200, duration_s: 7320}, {line: "${SLOW}", distance_m: 165400, duration_s: 7560}]`,
+    );
+    const screen = await show(view(program));
+    const fastest = screen.getByRole("radio", { name: /Fastest route/ });
+    const alternative = screen.getByRole("radio", { name: /Alternative 1/ });
+    await expect.element(fastest).toHaveAttribute("tabindex", "0");
+    await expect.element(alternative).toHaveAttribute("tabindex", "-1");
+    (fastest.element() as HTMLElement).focus();
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.element(alternative).toHaveAttribute("aria-checked", "true");
+    expect(document.activeElement).toBe(alternative.element());
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.element(fastest).toHaveAttribute("aria-checked", "true");
+    await userEvent.keyboard("{ArrowUp}");
+    await expect.element(alternative).toHaveAttribute("aria-checked", "true");
+    await expect.element(screen.getByText(/3 places by road: 165 km/)).toBeInTheDocument();
+  });
+
   it("keeps the places and says why when no road route was found", async () => {
     const screen = await show(view(placeMap("[]", ', "These places are on different islands; no road joins them."')));
     await expect

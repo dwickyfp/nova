@@ -23,6 +23,11 @@ import { createPortal } from "react-dom";
 import { X, Minus, Plus, Locate, Maximize, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type MapLibreModule = typeof MapLibreGL;
 
@@ -229,7 +234,8 @@ type MapProps = {
   onViewportChange?: (viewport: MapViewport) => void;
   /** Show a loading indicator on the map */
   loading?: boolean;
-  onMapError?: () => void;
+  /** A load or render failure; the event is absent when the map cannot start. */
+  onMapError?: (event?: MapLibreGL.ErrorEvent) => void;
   onReady?: () => void;
   onViewportCommit?: (viewport: MapViewport) => void;
 } & Omit<MapLibreGL.MapOptions, "container" | "style">;
@@ -340,6 +346,9 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
           attributionControl: {
             compact: true,
           },
+          // Maps sit inside scrolling pages: a plain wheel scrolls the page,
+          // Ctrl/⌘ + wheel zooms, and touch pans with two fingers.
+          cooperativeGestures: true,
           ...props,
           ...viewport,
         });
@@ -351,9 +360,9 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
           setIsLoaded(true);
           callbacks.current.onReady?.();
         });
-        instance.on("error", () => {
+        instance.on("error", (event) => {
           setFailed(true);
-          callbacks.current.onMapError?.();
+          callbacks.current.onMapError?.(event);
         });
         instance.on("moveend", () => {
           if (!internalUpdateRef.current)
@@ -922,39 +931,90 @@ const positionClasses = {
 
 function ControlGroup({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-border bg-background [&>button:not(:last-child)]:border-border flex flex-col overflow-hidden rounded-md border shadow-sm [&>button:not(:last-child)]:border-b">
+    <div className="flex flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-sm [&>button:not(:last-child)]:border-b [&>button:not(:last-child)]:border-border">
       {children}
     </div>
   );
 }
 
+type MapControlButtonProps = {
+  onClick: () => void;
+  /** Accessible name; also the tooltip unless `tooltip` is given. */
+  label: string;
+  /** Tooltip text, e.g. why the control is unavailable. */
+  tooltip?: string;
+  children: React.ReactNode;
+  /** Unavailable: stays focusable so its tooltip can explain why. */
+  disabled?: boolean;
+  /** A toggle's state, announced as `aria-pressed`. */
+  pressed?: boolean;
+};
+
 function ControlButton({
   onClick,
   label,
+  tooltip,
   children,
   disabled = false,
-}: {
-  onClick: () => void;
-  label: string;
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
+  pressed,
+}: MapControlButtonProps) {
   return (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      type="button"
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={() => {
+            if (!disabled) onClick();
+          }}
+          aria-label={label}
+          aria-pressed={pressed}
+          aria-disabled={disabled || undefined}
+          type="button"
+          className={cn(
+            "flex size-8 items-center justify-center transition-colors pointer-coarse:size-10",
+            "first:rounded-t-md last:rounded-b-md",
+            "hover:bg-accent hover:text-accent-foreground",
+            "aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/90",
+            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
+            "aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent",
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="left" sideOffset={6}>
+        {tooltip ?? label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+type MapControlStackProps = {
+  /** Corner of the map (default: "top-right", clear of the attribution). */
+  position?: keyof typeof positionClasses;
+  className?: string;
+  /** `MapControlGroup`s, stacked vertically. */
+  children: React.ReactNode;
+};
+
+/** A floating stack of map actions inside the map frame. */
+function MapControlStack({
+  position = "top-right",
+  className,
+  children,
+}: MapControlStackProps) {
+  return (
+    <div
+      role="toolbar"
+      aria-orientation="vertical"
+      aria-label="Map controls"
       className={cn(
-        "flex min-h-11 min-w-11 items-center justify-center transition-colors",
-        "first:rounded-t-md last:rounded-b-md",
-        "hover:bg-accent dark:hover:bg-accent/40",
-        "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset",
-        "disabled:pointer-events-none disabled:opacity-50",
+        "absolute z-10 flex flex-col gap-1.5",
+        positionClasses[position],
+        className,
       )}
-      disabled={disabled}
     >
       {children}
-    </button>
+    </div>
   );
 }
 
@@ -2788,6 +2848,9 @@ export {
   MarkerLabel,
   MapPopup,
   MapControls,
+  MapControlStack,
+  ControlGroup as MapControlGroup,
+  ControlButton as MapControlButton,
   MapRoute,
   RouteProgress,
   RouteMarker,
@@ -2812,6 +2875,8 @@ export type {
   MarkerTooltipProps,
   MarkerLabelProps,
   MapControlsProps,
+  MapControlStackProps,
+  MapControlButtonProps,
   MapPopupProps,
   MapRouteProps,
   RouteProgressProps,

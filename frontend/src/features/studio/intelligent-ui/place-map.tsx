@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { MapMarker, MapRoute, MarkerContent, MarkerTooltip } from "@/components/ui/map";
 import { mapColor } from "@/components/ui/map/tokens";
 import { cn } from "@/lib/utils";
-import { geoBounds } from "./geometry";
+import { placeBounds } from "./geometry";
 import { MapSurface } from "./map-surface";
 import { decodePolyline } from "./polyline";
 
@@ -49,21 +49,8 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
   const [active, setActive] = useState(0);
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const bounds = useMemo(
-    () =>
-      geoBounds([
-        ...places.map((place, index) => ({
-          type: "Feature" as const,
-          id: index,
-          geometry: { type: "Point" as const, coordinates: [place.lon, place.lat] as [number, number] },
-          properties: {},
-        })),
-        ...(lines[0]?.length
-          ? [{ type: "Feature" as const, id: -1, geometry: { type: "LineString" as const, coordinates: lines[0] }, properties: {} }]
-          : []),
-      ]),
-    [places, lines],
-  );
+  // Every route, so Show all frames whichever alternative is drawn.
+  const bounds = useMemo(() => placeBounds(places, lines), [places, lines]);
   const color = mapColor(ROUTE_TOKEN);
   const routed = routes.length > 0;
   const approximate = places.some((place) => place.check === "approximate");
@@ -77,7 +64,17 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
           type="button"
           role="radio"
           aria-checked={active === index}
+          tabIndex={active === index ? 0 : -1}
           onClick={() => setActive(index)}
+          onKeyDown={(event) => {
+            const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+            if (!step) return;
+            event.preventDefault();
+            const next = (index + step + routes.length) % routes.length;
+            setActive(next);
+            const group = event.currentTarget.parentElement;
+            group?.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
+          }}
           className={cn(
             "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring",
             active === index ? "bg-muted" : "hover:bg-muted/60",
@@ -121,11 +118,13 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
         ) : null}
       </div>
       <MapSurface aside={aside} bounds={bounds} onReady={() => setLoaded(true)} onError={() => setError(true)}>
+        {/* Ids name the role as well as the route: a line keeps its id for
+            life, so the chosen route remounts on top instead of renaming one. */}
         {lines.map((line, index) =>
           index === active ? null : (
             <MapRoute
               key={`alt-${index}`}
-              id={`place-route-${index}`}
+              id={`place-alt-${index}`}
               coordinates={line}
               color={color}
               width={3}
@@ -136,7 +135,15 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
           ),
         )}
         {lines[active] ? (
-          <MapRoute id={`place-route-${active}`} coordinates={lines[active]} color={color} width={5} opacity={0.95} />
+          <MapRoute
+            key={`active-${active}`}
+            id={`place-active-${active}`}
+            coordinates={lines[active]}
+            color={color}
+            width={5}
+            opacity={0.95}
+            interactive={false}
+          />
         ) : null}
         {places.map((place, index) => (
           <MapMarker key={`${place.label}-${index}`} longitude={place.lon} latitude={place.lat}>
