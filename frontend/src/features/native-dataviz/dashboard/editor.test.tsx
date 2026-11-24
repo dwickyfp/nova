@@ -401,14 +401,16 @@ describe('canvas authoring in the editor', () => {
     await expect.poll(() => operations.length).toBe(2)
     expect(lastOp().changes[0]).toMatchObject({ op: 'elements.arrange', placements: [{ element_id: rect }] })
 
-    // Format it: open the panel, then the Fill list, and type to pick Brand.
+    // Format it: open the panel, then the Fill list, and arrow down to Brand.
+    // (Not typeahead: its buffer resets after a second, so a slow run picks another colour.)
     await tabTo('Format and layers')
     await userEvent.keyboard('{Enter}')
     await expect.element(page.getByRole('complementary', { name: 'Format and layers' })).toBeVisible()
     await tabTo('Card')
     await userEvent.keyboard('{Enter}')
     await expect.element(page.getByRole('option', { name: 'Brand' })).toBeVisible()
-    await userEvent.keyboard('Brand')
+    for (let step = 0; step < 20 && document.activeElement?.textContent !== 'Brand'; step++) await userEvent.keyboard('{ArrowDown}')
+    await expect.element(page.getByRole('option', { name: 'Brand' })).toHaveFocus()
     await userEvent.keyboard('{Enter}')
     await expect.poll(() => operations.length).toBe(3)
     expect(lastOp().changes[0]).toMatchObject({ op: 'elements.update', updates: [{ element_id: rect, set: { style: { fill: { token: 'brand' } } } }] })

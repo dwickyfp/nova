@@ -1194,3 +1194,26 @@ by a recorded decision and 3 are blocked.
   schemas, licenses, bundle budget (159.7/175 kB largest chunk, 682.6/690 kB
   first load), coverage as above. No backend file changed in part 2.
 - **Open:** part 3 (images and photo backgrounds, reference 9).
+
+## Free canvas P2 part 3: images (2026-11-24)
+
+- **Built (PR #253, stacked on #252):**
+  - migration 0064 `viz_assets` registry, with row security through `viz_can`, immutable rows and a redacted audit row per upload;
+  - raw-body upload with byte sniffing (PNG, JPEG or WebP only; no SVG; 2 MiB, 8192 px, 40 MP) and write-before-commit with removal on failure;
+  - per-request View-checked serving with digest verification and `no-store`;
+  - reconciler coverage of `.viz-assets` keys;
+  - editor Image tool, image Format fields, and the background photo with Fit and Darken.
+- **Not active yet:** 0064 is not applied to the shared development database. The coordinator gives the window after merge. Reference 9 and live checks as alice follow.
+- **Changed during the work:** responses first used `private, max-age=300`. This was changed to `private, no-store`, because a browser cache hit would skip the per-request View check. The page keeps its own copy only until the role changes.
+- **Gates (local, final source):**
+  - backend unit: 13,628 passed;
+  - mypy: 781 files clean;
+  - changed-file ruff: clean;
+  - eval scorecard: 54/54 (scripted model);
+  - frontend lint (0 errors), build, component schemas, licenses;
+  - bundle: 159.7/175 kB largest chunk, 683.3/690 kB first load;
+  - PG17 suite: CI only, because there is no local PostgreSQL and no containers were started.
+- **Coverage attempts:**
+  - Attempt 1: 2 failed, `navigation-material.integration` (Studio) and `qa-editor-a11y` NDV-A11Y-006. It ran alongside the backend unit suite and the scorecard. Both pass alone twice.
+  - Attempt 2: 1 failed, the keyboard-only editor test. Radix select typeahead picked "Accent" instead of "Brand" because its buffer resets after one second under load. The test now arrows down to Brand and checks focus before Enter.
+  - Attempt 3: see below.
