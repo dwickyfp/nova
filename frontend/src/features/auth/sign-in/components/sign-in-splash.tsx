@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Logo } from "@/assets/logo";
+import { Wordmark } from "@/assets/wordmark";
 import "./sign-in-splash.css";
 
 export function SignInSplash({ onReady }: { onReady: () => void }) {
@@ -44,7 +45,9 @@ export function SignInSplash({ onReady }: { onReady: () => void }) {
         />
       </div>
       <div className="space-y-2 text-center">
-        <p className="text-xl font-semibold tracking-tight">Nova</p>
+        <p className="flex justify-center">
+          <Wordmark size={28} />
+        </p>
         <p className="text-sm text-muted-foreground">Opening your workspace…</p>
       </div>
     </div>

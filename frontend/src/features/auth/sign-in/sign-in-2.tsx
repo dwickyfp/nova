@@ -1,4 +1,5 @@
 import { Logo } from '@/assets/logo'
+import { Wordmark } from '@/assets/wordmark'
 import { useSearch } from '@tanstack/react-router'
 import { SignInVisual } from './components/sign-in-visual'
 import { UserAuthForm } from './components/user-auth-form'
@@ -14,12 +15,15 @@ export function SignIn2() {
             <Logo sizes='40px'
               className='size-10'
             />
-            <div className='leading-tight'>
-              <h1 className='text-lg font-bold tracking-tight'>Nova</h1>
-              <p className='text-xs font-medium text-muted-foreground'>
-                Enterprise Intelligence OS
-              </p>
-            </div>
+            <h1 className='m-0 text-foreground'>
+              <Wordmark
+                size={20}
+                label='Enterprise Intelligence OS'
+                layout='stacked'
+                className='gap-1.5'
+                labelClassName='font-medium tracking-[0.04em] normal-case'
+              />
+            </h1>
             </div>
             <h2 className='text-2xl font-semibold tracking-tight'>Sign in to Nova</h2>
           </header>
