@@ -360,7 +360,15 @@ def _explicit_plan(arguments: dict[str, Any]) -> dict[str, Any] | None:
         plan["sort"] = dict(arguments["sort"])
     if arguments.get("top_n"):
         plan["top_n"] = int(arguments["top_n"])
+    if visual == "pie" and _DONUT.search(
+            f"{arguments.get('intent') or ''} {arguments.get('title') or ''}"):
+        # A donut is a pie with a hole: the same chart, drawn as asked.
+        plan["donut"] = True
     return plan
+
+
+#: Words that ask for a pie drawn as a donut.
+_DONUT = re.compile(r"\b(donut|doughnut|cincin)\b", re.IGNORECASE)
 
 
 async def _native_chart(

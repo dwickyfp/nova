@@ -47,6 +47,19 @@ hold:
 
 A single figure or a short list is still answered in a sentence, not a page.
 
+### Follow up on a page
+
+The agent remembers a page it showed: its title, its text and the figures in
+its key figures. Ask "What's the conclusion?" or "Which month was higher?" and
+it answers from those figures. Scenario figures that move with the what-if
+controls are not remembered.
+
+Ask for the same result in another form, such as "Just give me a table
+instead" after a map, and the agent shows the rows of the previous answer
+again without running a new query. This works only while you use the role you
+asked the earlier question with; after you switch roles, ask the question
+again.
+
 ## What-if controls
 
 Moving a slider or picking an option recalculates the scenario figures on the
@@ -115,6 +128,9 @@ example, with a sales agent:
 ```text
 Show net revenue per month from May to October 2026 as a line chart.
 ```
+
+Ask for a donut chart and you get one: a pie chart with a hole in the middle,
+showing each part's share of the whole.
 
 The answer starts with its main finding, then shows the chart with its title
 (for example "Monthly net revenue (IDR), May–October 2026"). Months run in time
