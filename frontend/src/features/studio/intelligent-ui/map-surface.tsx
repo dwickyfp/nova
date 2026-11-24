@@ -1,20 +1,16 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Box, Compass, Rotate3d, Scan } from "lucide-react";
 import type { StyleSpecification } from "maplibre-gl";
 import {
   Map,
+  MapControlButton,
+  MapControlGroup,
+  MapControlStack,
   useMap,
   type MapRef,
   type MapViewport,
 } from "@/components/ui/map";
 import { motionDuration } from "@/components/ui/map/tokens";
-import { Button } from "@/components/ui/button";
 import { useTheme } from "@/context/theme-provider";
 import { mapView, type MapOptions } from "./map-options";
 import {
@@ -82,101 +78,109 @@ function Camera({
   return null;
 }
 
-function MapToolbar({
-  mapRef,
+// The fit Show all uses: flat and north-up, since a fit from a tilted or
+// rotated camera can leave locations off-canvas.
+const FIT_ALL = { padding: FIT_PADDING, maxZoom: 13, pitch: 0, bearing: 0 };
+
+function MapActions({
   bounds,
   options,
   follow,
   threeD,
   onThreeD,
+  threeDFailed,
 }: {
-  mapRef: RefObject<MapRef | null>;
   bounds: Bounds | null;
   options: MapOptions;
   follow: Flag;
-  threeD?: boolean;
+  threeD: boolean;
   onThreeD?: (on: boolean) => void;
+  threeDFailed: boolean;
 }) {
-  const [advanced, setAdvanced] = useState(false);
+  const { map } = useMap();
   const fit = () => {
-    follow.current = false;
+    if (!map || !bounds) return;
     onThreeD?.(false);
-    if (bounds)
-      // A fit from a tilted or rotated camera can leave locations off-canvas.
-      mapRef.current?.fitBounds(bounds, {
-        padding: FIT_PADDING,
-        maxZoom: 13,
-        pitch: 0,
-        bearing: 0,
-        duration: motionDuration(300),
-      });
+    // The fitted camera is committed as the user's view; afterwards the camera
+    // follows the data again, so a resize or rotation keeps every location in view.
+    follow.current = false;
+    const canvas = map.getCanvas();
+    const size = `${canvas.clientWidth}x${canvas.clientHeight}`;
+    map.once("moveend", () => {
+      follow.current = true;
+      // A resize during the animation would otherwise land on a stale frame.
+      if (`${canvas.clientWidth}x${canvas.clientHeight}` !== size)
+        map.fitBounds(bounds, { ...FIT_ALL, animate: false });
+    });
+    map.fitBounds(bounds, { ...FIT_ALL, duration: motionDuration(300) });
+  };
+  const toggleThreeD = () => {
+    if (!map || !onThreeD) return;
+    follow.current = false;
+    onThreeD(!threeD);
+    map.easeTo(
+      threeD
+        ? { pitch: 0, bearing: 0, duration: motionDuration(500) }
+        : {
+            pitch: 60,
+            // Liberty extrudes buildings from zoom 14; mapcn's example uses 15.
+            zoom: Math.max(map.getZoom(), 15),
+            duration: motionDuration(500),
+          },
+    );
   };
   return (
-    <div className="flex flex-wrap gap-1">
-      <Button size="sm" variant="secondary" onClick={fit} disabled={!bounds}>
-        Show all locations
-      </Button>
-      {onThreeD && (
-        <Button
-          size="sm"
-          variant={threeD ? "default" : "secondary"}
-          aria-pressed={threeD}
-          onClick={() => {
-            follow.current = false;
-            onThreeD(!threeD);
-            const map = mapRef.current;
-            map?.easeTo({
-              pitch: threeD ? 0 : 60,
-              // Liberty extrudes buildings from zoom 14; mapcn's example uses 15.
-              ...(threeD ? {} : { zoom: Math.max(map.getZoom(), 15) }),
-              duration: motionDuration(500),
-            });
-          }}
+    <MapControlStack>
+      <MapControlGroup>
+        <MapControlButton
+          label="Show all locations"
+          onClick={fit}
+          disabled={!bounds}
         >
-          3D view
-        </Button>
-      )}
-      {options.advanced && (
-        <Button
-          size="sm"
-          variant="secondary"
-          aria-expanded={advanced}
-          onClick={() => setAdvanced(!advanced)}
-        >
-          Map view
-        </Button>
-      )}
-      {advanced && (
-        <>
-          <Button
-            size="sm"
-            variant="ghost"
+          <Scan className="size-4" aria-hidden />
+        </MapControlButton>
+        {onThreeD && (
+          <MapControlButton
+            label="3D view"
+            tooltip={
+              threeDFailed
+                ? "3D view could not load"
+                : threeD
+                  ? "2D view"
+                  : "3D view"
+            }
+            pressed={threeD}
+            disabled={threeDFailed}
+            onClick={toggleThreeD}
+          >
+            <Box className="size-4" aria-hidden />
+          </MapControlButton>
+        )}
+        {options.advanced && (
+          <MapControlButton
+            label="Tilt view"
             onClick={() => {
               follow.current = false;
-              mapRef.current?.easeTo({
-                pitch: 45,
-                duration: motionDuration(300),
-              });
+              map?.easeTo({ pitch: 45, duration: motionDuration(300) });
             }}
           >
-            Tilt view
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
+            <Rotate3d className="size-4" aria-hidden />
+          </MapControlButton>
+        )}
+        {options.advanced && (
+          <MapControlButton
+            label="Reset view"
             onClick={() => {
               follow.current = false;
               onThreeD?.(false);
-              mapRef.current?.resetNorthPitch({
-                duration: motionDuration(300),
-              });
+              map?.resetNorthPitch({ duration: motionDuration(300) });
             }}
           >
-            Reset view
-          </Button>
-        </>
-      )}
-    </div>
+            <Compass className="size-4" aria-hidden />
+          </MapControlButton>
+        )}
+      </MapControlGroup>
+    </MapControlStack>
   );
 }
 
@@ -215,7 +219,7 @@ export function MapSurface({
   basemap = "configured",
 }: {
   children: ReactNode;
-  /** A panel beside the map frame, below the toolbar, sharing the frame's height. */
+  /** A panel beside the map frame, sharing the frame's height. */
   aside?: ReactNode;
   bounds: Bounds | null;
   focusBounds?: Bounds | null;
@@ -236,6 +240,11 @@ export function MapSurface({
   const [threeD, setThreeD] = useState(
     () => streets && (mapView(viewport)?.pitch ?? 0) >= 59.5,
   );
+  // The 3D basemap is a separate online service: when it fails, the map
+  // returns to 2D and the 3D control explains why it is unavailable.
+  const [threeDFailed, setThreeDFailed] = useState(false);
+  const threeDShown = useRef(threeD);
+  threeDShown.current = threeD;
   const styles = useMemo(() => {
     if (streets && threeD)
       return { light: PUBLIC_3D_STYLE, dark: PUBLIC_3D_STYLE };
@@ -245,17 +254,7 @@ export function MapSurface({
   }, [resolvedTheme, streets, threeD]);
   const view = mapView(viewport);
   return (
-    <div className="min-w-0 space-y-2">
-      {options.controls !== false && (
-        <MapToolbar
-          mapRef={mapRef}
-          bounds={bounds}
-          options={options}
-          follow={follow}
-          threeD={threeD}
-          onThreeD={streets ? setThreeD : undefined}
-        />
-      )}
+    <div className="min-w-0">
       <div
         className={
           aside
@@ -269,7 +268,16 @@ export function MapSurface({
             styles={styles}
             theme={resolvedTheme}
             viewport={view}
-            onMapError={() => {
+            onMapError={(event) => {
+              // An event means the started map failed to load a resource;
+              // without one MapLibre itself could not start.
+              if (event && threeDShown.current) {
+                threeDShown.current = false;
+                setThreeD(false);
+                setThreeDFailed(true);
+                mapRef.current?.easeTo({ pitch: 0, bearing: 0, duration: 0 });
+                return;
+              }
               onError();
             }}
             onReady={() => {
@@ -294,6 +302,16 @@ export function MapSurface({
             <Camera bounds={bounds} initialView={view} follow={follow} />
             <FocusLocation bounds={focusBounds} follow={follow} />
             {children}
+            {options.controls !== false && (
+              <MapActions
+                bounds={bounds}
+                options={options}
+                follow={follow}
+                threeD={threeD}
+                onThreeD={streets ? setThreeD : undefined}
+                threeDFailed={threeDFailed}
+              />
+            )}
           </Map>
         </div>
         {aside}
